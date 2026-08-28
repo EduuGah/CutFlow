@@ -35,9 +35,8 @@ export interface Appointment {
   customer_id: string;
   barber_id: string;
   service_id: string;
-  appointment_date: string;
-  start_time: string;
-  end_time: string;
+  start_datetime: string;
+  end_datetime: string;
   status: AppointmentStatus;
   created_at: string;
 }

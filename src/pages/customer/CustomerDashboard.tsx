@@ -16,6 +16,19 @@ export const CustomerDashboard = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<UserProfile | null>(null);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+
+  // Time Slots State
+  const [isTimeSelectionVisible, setIsTimeSelectionVisible] = useState(false);
+  const [bookedAppointments, setBookedAppointments] = useState<Appointment[]>([]);
+  const [isCheckingSlots, setIsCheckingSlots] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
+
+  // Reset time selection when inputs change
+  useEffect(() => {
+    setIsTimeSelectionVisible(false);
+    setSelectedTime(null);
+  }, [selectedDate, selectedBarber, selectedService]);
 
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
@@ -113,6 +126,144 @@ export const CustomerDashboard = () => {
   const isPrevMonthDisabled = () => {
     const today = new Date();
     return currentMonth.getFullYear() === today.getFullYear() && currentMonth.getMonth() === today.getMonth();
+  };
+
+  const handleContinueToTimes = async () => {
+    if (!selectedDate || !selectedBarber || !selectedService) return;
+    
+    setIsCheckingSlots(true);
+    setIsTimeSelectionVisible(true);
+    
+    const startOfDay = new Date(selectedDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(selectedDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const { data } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('barber_id', selectedBarber.id)
+      .gte('start_datetime', startOfDay.toISOString())
+      .lte('start_datetime', endOfDay.toISOString())
+      .neq('status', 'CANCELLED');
+        
+    if (data) {
+      setBookedAppointments(data as Appointment[]);
+    }
+    
+    setIsCheckingSlots(false);
+  };
+
+  const generateTimeSlots = () => {
+    if (!selectedDate || !selectedBarber || !selectedService) return [];
+    
+    const dayOfWeek = selectedDate.getDay();
+    const schedule = schedules.find(s => s.barber_id === selectedBarber.id && s.day_of_week === dayOfWeek);
+    
+    if (!schedule) return [];
+    
+    const parseTime = (timeStr: string) => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+    
+    const formatTime = (minutes: number) => {
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+    
+    const startMins = parseTime(schedule.start_time);
+    const endMins = parseTime(schedule.end_time);
+    const lunchStartMins = schedule.lunch_start ? parseTime(schedule.lunch_start) : null;
+    const lunchEndMins = schedule.lunch_end ? parseTime(schedule.lunch_end) : null;
+    
+    const serviceDuration = selectedService.duration_minutes;
+    const slots: string[] = [];
+    
+    const bookedRanges = bookedAppointments.map(app => {
+      const start = new Date(app.start_datetime);
+      const end = new Date(app.end_datetime);
+      return {
+        start: start.getHours() * 60 + start.getMinutes(),
+        end: end.getHours() * 60 + end.getMinutes()
+      };
+    });
+    
+    let currentMins = startMins;
+    const slotInterval = 30; // 30 minutes blocks
+    
+    const today = new Date();
+    const isToday = selectedDate.getDate() === today.getDate() && 
+                    selectedDate.getMonth() === today.getMonth() && 
+                    selectedDate.getFullYear() === today.getFullYear();
+    const currentDayMins = today.getHours() * 60 + today.getMinutes();
+    
+    while (currentMins + serviceDuration <= endMins) {
+      const slotStart = currentMins;
+      const slotEnd = currentMins + serviceDuration;
+      
+      // Skip if in the past today (add 30 mins margin)
+      if (isToday && slotStart <= currentDayMins + 30) {
+        currentMins += slotInterval;
+        continue;
+      }
+      
+      const overlapsLunch = lunchStartMins !== null && lunchEndMins !== null &&
+        (slotStart < lunchEndMins && slotEnd > lunchStartMins);
+          
+      const overlapsBooked = bookedRanges.some(booked => 
+        (slotStart < booked.end && slotEnd > booked.start)
+      );
+      
+      if (!overlapsLunch && !overlapsBooked) {
+        slots.push(formatTime(slotStart));
+      }
+      
+      currentMins += slotInterval;
+    }
+    
+    return slots;
+  };
+
+  const handleBookAppointment = async () => {
+    if (!profile || !selectedDate || !selectedBarber || !selectedService || !selectedTime) return;
+    
+    setIsBooking(true);
+    
+    const [startHours, startMinutes] = selectedTime.split(':').map(Number);
+    const startDatetime = new Date(selectedDate);
+    startDatetime.setHours(startHours, startMinutes, 0, 0);
+
+    const endTotalMinutes = startHours * 60 + startMinutes + selectedService.duration_minutes;
+    const endHours = Math.floor(endTotalMinutes / 60);
+    const endMinutes = endTotalMinutes % 60;
+    const endDatetime = new Date(selectedDate);
+    endDatetime.setHours(endHours, endMinutes, 0, 0);
+
+    const { error } = await supabase.from('appointments').insert({
+      customer_id: profile.id,
+      barber_id: selectedBarber.id,
+      service_id: selectedService.id,
+      start_datetime: startDatetime.toISOString(),
+      end_datetime: endDatetime.toISOString(),
+      status: 'CONFIRMED'
+    });
+
+    if (error) {
+      alert('Erro ao agendar horário. Tente novamente.');
+      console.error(error);
+    } else {
+      alert('Horário agendado com sucesso!');
+      // Reset flow
+      setSelectedTime(null);
+      setSelectedService(null);
+      setSelectedBarber(null);
+      setSelectedDate(null);
+      setIsTimeSelectionVisible(false);
+    }
+    
+    setIsBooking(false);
   };
 
   return (
@@ -288,6 +439,49 @@ export const CustomerDashboard = () => {
                 })}
               </div>
             </section>
+
+            {/* Step 4: Time Selection */}
+            {isTimeSelectionVisible && (
+              <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center gap-3 mb-5 mt-4">
+                  <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">4</div>
+                  <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">Horário</h2>
+                </div>
+                
+                {isCheckingSlots ? (
+                  <div className="flex justify-center p-8 bg-zinc-50 border border-zinc-200 rounded-2xl">
+                    <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                  </div>
+                ) : (
+                  <div className="bg-white border border-zinc-200 rounded-3xl p-6 shadow-sm">
+                    {generateTimeSlots().length === 0 ? (
+                      <div className="text-center py-6">
+                        <p className="text-zinc-500 text-sm">Nenhum horário disponível para esta data.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                        {generateTimeSlots().map((time) => {
+                          const isSelected = selectedTime === time;
+                          return (
+                            <button
+                              key={time}
+                              onClick={() => setSelectedTime(time)}
+                              className={`py-3 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                                isSelected
+                                  ? 'bg-zinc-900 text-white shadow-md ring-2 ring-zinc-900 ring-offset-2'
+                                  : 'bg-zinc-50 text-zinc-700 border border-zinc-200 hover:border-zinc-400 hover:bg-zinc-100'
+                              }`}
+                            >
+                              {time}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
 
           {/* Right Column: Date & Time & Summary */}
@@ -307,6 +501,11 @@ export const CustomerDashboard = () => {
                         ? selectedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
                         : <span className="text-zinc-400 font-normal">Não selecionada</span>}
                     </p>
+                    {selectedTime && (
+                      <p className="text-sm font-semibold text-zinc-900 mt-1">
+                        às {selectedTime}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -346,17 +545,44 @@ export const CustomerDashboard = () => {
               </div>
 
               <div className="pt-6 border-t border-zinc-200/60">
-                <button
-                  disabled={!selectedDate || !selectedBarber || !selectedService}
-                  className="w-full py-4 px-4 bg-zinc-900 text-white rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all duration-200 shadow-sm disabled:shadow-none"
-                >
-                  Continuar para Horários
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                {(!selectedDate || !selectedBarber || !selectedService) && (
-                  <p className="text-xs text-center text-zinc-500 mt-4">
-                    Conclua as etapas acima para continuar.
-                  </p>
+                {!isTimeSelectionVisible ? (
+                  <>
+                    <button
+                      onClick={handleContinueToTimes}
+                      disabled={!selectedDate || !selectedBarber || !selectedService}
+                      className="w-full py-4 px-4 bg-zinc-900 text-white rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all duration-200 shadow-sm disabled:shadow-none"
+                    >
+                      Continuar para Horários
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                    {(!selectedDate || !selectedBarber || !selectedService) && (
+                      <p className="text-xs text-center text-zinc-500 mt-4">
+                        Conclua as etapas acima para continuar.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleBookAppointment}
+                      disabled={!selectedTime || isBooking}
+                      className="w-full py-4 px-4 bg-zinc-900 text-white rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all duration-200 shadow-sm disabled:shadow-none"
+                    >
+                      {isBooking ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          Confirmar Agendamento
+                          <CheckCircle2 className="w-5 h-5" />
+                        </>
+                      )}
+                    </button>
+                    {!selectedTime && (
+                      <p className="text-xs text-center text-zinc-500 mt-4">
+                        Selecione um horário para confirmar.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>

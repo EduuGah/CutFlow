@@ -18,11 +18,34 @@ export const CustomerLayout = () => {
       {/* Top Navigation */}
       <header className="bg-white border-b border-zinc-200 sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
-              <Scissors className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
+                <Scissors className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow</span>
             </div>
-            <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow</span>
+
+            {/* Desktop Navigation */}
+            <nav className="hidden sm:flex items-center gap-6 ml-8">
+              <NavLink 
+                to="/customer" 
+                end
+                className={({ isActive }) => 
+                  `text-sm font-medium transition-colors ${isActive ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`
+                }
+              >
+                Agendar
+              </NavLink>
+              <NavLink 
+                to="/customer/appointments" 
+                className={({ isActive }) => 
+                  `text-sm font-medium transition-colors ${isActive ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`
+                }
+              >
+                Meus Horários
+              </NavLink>
+            </nav>
           </div>
 
           <div className="flex items-center gap-4">
@@ -47,19 +70,30 @@ export const CustomerLayout = () => {
       </main>
       
       {/* Mobile Bottom Navigation (Optional for future) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 pb-safe">
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 pb-safe z-30">
         <div className="flex items-center justify-around p-2">
           <NavLink
             to="/customer"
             end
             className={({ isActive }) =>
-              `flex flex-col items-center p-2 rounded-lg text-xs font-medium ${
-                isActive ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'
+              `flex flex-col items-center p-2 rounded-lg text-xs font-medium w-full ${
+                isActive ? 'text-zinc-900 bg-zinc-50' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
+              }`
+            }
+          >
+            <Plus className="w-6 h-6 mb-1" />
+            Agendar
+          </NavLink>
+          <NavLink
+            to="/customer/appointments"
+            className={({ isActive }) =>
+              `flex flex-col items-center p-2 rounded-lg text-xs font-medium w-full ${
+                isActive ? 'text-zinc-900 bg-zinc-50' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
               }`
             }
           >
             <Calendar className="w-6 h-6 mb-1" />
-            Início
+            Horários
           </NavLink>
         </div>
       </div>

@@ -10,6 +10,7 @@ import { CustomerLayout } from './components/layout/CustomerLayout';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
 import { CustomerDashboard } from './pages/customer/CustomerDashboard';
+import { CustomerAppointments } from './pages/customer/CustomerAppointments';
 import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ServicesManagement } from './pages/admin/ServicesManagement';
@@ -31,6 +32,7 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
             <Route element={<CustomerLayout />}>
               <Route path="/customer" element={<CustomerDashboard />} />
+              <Route path="/customer/appointments" element={<CustomerAppointments />} />
             </Route>
           </Route>
 
