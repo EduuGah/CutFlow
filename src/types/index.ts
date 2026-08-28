@@ -20,3 +20,13 @@ export interface Service {
   created_at: string;
 }
 
+export interface BarberSchedule {
+  id?: string;
+  barber_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  lunch_start: string | null;
+  lunch_end: string | null;
+}
+

@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AdminLayout } from './components/layout/AdminLayout';
+import { BarberLayout } from './components/layout/BarberLayout';
+import { CustomerLayout } from './components/layout/CustomerLayout';
 
 // Pages placeholders
 import { Login } from './pages/auth/Login';
@@ -11,6 +13,7 @@ import { CustomerDashboard } from './pages/customer/CustomerDashboard';
 import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ServicesManagement } from './pages/admin/ServicesManagement';
+import { BarbersManagement } from './pages/admin/BarbersManagement';
 
 function App() {
   return (
@@ -26,12 +29,16 @@ function App() {
 
           {/* Rotas Protegidas - Clientes */}
           <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
-            <Route path="/customer" element={<CustomerDashboard />} />
+            <Route element={<CustomerLayout />}>
+              <Route path="/customer" element={<CustomerDashboard />} />
+            </Route>
           </Route>
 
           {/* Rotas Protegidas - Barbeiros */}
           <Route element={<ProtectedRoute allowedRoles={['BARBER']} />}>
-            <Route path="/barber" element={<BarberDashboard />} />
+            <Route element={<BarberLayout />}>
+              <Route path="/barber" element={<BarberDashboard />} />
+            </Route>
           </Route>
 
           {/* Rotas Protegidas - Admin */}
@@ -39,7 +46,8 @@ function App() {
             <Route element={<AdminLayout />}>
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/services" element={<ServicesManagement />} />
-              {/* Future admin routes will go here (Barbers, Schedule, etc) */}
+              <Route path="/admin/barbers" element={<BarbersManagement />} />
+              {/* Future admin routes will go here (Schedule, etc) */}
             </Route>
           </Route>
           

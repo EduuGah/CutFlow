@@ -106,6 +106,25 @@ create policy "Admins podem deletar serviços" on public.services
     exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
   );
 
+-- BARBER SCHEDULES: Todos autenticados podem ver, mas Admins podem gerenciar
+create policy "Todos autenticados podem ver as agendas dos barbeiros" on public.barber_schedules
+  for select using (auth.role() = 'authenticated');
+
+create policy "Admins podem inserir na agenda" on public.barber_schedules
+  for insert with check (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
+create policy "Admins podem atualizar a agenda" on public.barber_schedules
+  for update using (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
+create policy "Admins podem deletar a agenda" on public.barber_schedules
+  for delete using (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
 -- APPOINTMENTS: Clientes veem os seus, Barbeiros veem os seus
 create policy "Clientes veem seus próprios agendamentos" on public.appointments
   for select using (auth.uid() = customer_id);
