@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Calendar, LogOut, Scissors } from 'lucide-react';
+import { Calendar, LogOut, Scissors, Clock, User } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -15,6 +15,8 @@ export const BarberLayout = () => {
 
   const menuItems = [
     { icon: Calendar, label: 'Minha Agenda', path: '/barber' },
+    { icon: Clock, label: 'Ausências e Bloqueios', path: '/barber/time-offs' },
+    { icon: User, label: 'Meu Perfil', path: '/barber/profile' },
   ];
 
   return (

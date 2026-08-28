@@ -144,3 +144,14 @@ create policy "Todos autenticados podem ver avaliações" on public.reviews
 create policy "Clientes podem inserir avaliações" on public.reviews
   for insert with check (auth.uid() = customer_id);
 
+
+-- TIME_OFFS: Todos podem ver, barbeiros gerenciam os seus, admins gerenciam todos
+create policy "Todos autenticados podem ver as time_offs" on public.time_offs
+  for select using (auth.role() = 'authenticated');
+
+create policy "Barbeiros podem inserir time_offs" on public.time_offs
+  for insert with check (auth.uid() = barber_id);
+
+create policy "Barbeiros podem deletar time_offs" on public.time_offs
+  for delete using (auth.uid() = barber_id);
+

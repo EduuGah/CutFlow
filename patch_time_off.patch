@@ -1,0 +1,31 @@
+--- src/pages/customer/CustomerDashboard.tsx
++++ src/pages/customer/CustomerDashboard.tsx
+@@ -192,6 +192,13 @@
+       };
+     });
+     
++    const timeOffRanges = blockedTimes.map(timeOff => {
++      return {
++        start: timeOff.start.getHours() * 60 + timeOff.start.getMinutes(),
++        end: timeOff.end.getHours() * 60 + timeOff.end.getMinutes()
++      };
++    });
++
+     let currentMins = startMins;
+     const slotInterval = 30; // 30 minutes blocks
+     
+@@ -213,8 +220,12 @@
+       const overlapsBooked = bookedRanges.some(booked => 
+         (slotStart < booked.end && slotEnd > booked.start)
+       );
+-      
+-      if (!overlapsLunch && !overlapsBooked) {
++
++      const overlapsTimeOff = timeOffRanges.some(blocked =>
++        (slotStart < blocked.end && slotEnd > blocked.start)
++      );
++      
++      if (!overlapsLunch && !overlapsBooked && !overlapsTimeOff) {
+         slots.push(formatTime(slotStart));
+       }
+       

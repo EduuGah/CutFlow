@@ -1,0 +1,1 @@
+sed -i 's/const \[bookedAppointments, setBookedAppointments\] = useState<Appointment\[\]>(\[\]);/const [bookedAppointments, setBookedAppointments] = useState<Appointment[]>([]);\n  const [blockedTimes, setBlockedTimes] = useState<{start: Date, end: Date}[]>([]);/g' src/pages/customer/CustomerDashboard.tsx

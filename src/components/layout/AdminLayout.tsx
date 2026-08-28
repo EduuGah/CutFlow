@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Scissors, Users, Calendar, LogOut } from 'lucide-react';
+import { LayoutDashboard, Scissors, Users, Calendar, LogOut, User } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 

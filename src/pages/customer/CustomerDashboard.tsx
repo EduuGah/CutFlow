@@ -21,6 +21,7 @@ export const CustomerDashboard = () => {
   // Time Slots State
   const [isTimeSelectionVisible, setIsTimeSelectionVisible] = useState(false);
   const [bookedAppointments, setBookedAppointments] = useState<Appointment[]>([]);
+  const [blockedTimes, setBlockedTimes] = useState<{start: Date, end: Date}[]>([]);
   const [isCheckingSlots, setIsCheckingSlots] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
@@ -143,16 +144,33 @@ export const CustomerDashboard = () => {
     const endOfDay = new Date(selectedDate);
     endOfDay.setHours(23, 59, 59, 999);
     
-    const { data } = await supabase
-      .from('appointments')
-      .select('*')
-      .eq('barber_id', selectedBarber.id)
-      .gte('start_datetime', startOfDay.toISOString())
-      .lte('start_datetime', endOfDay.toISOString())
-      .neq('status', 'CANCELLED');
+    const [appointmentsRes, timeOffsRes] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('*')
+        .eq('barber_id', selectedBarber.id)
+        .gte('start_datetime', startOfDay.toISOString())
+        .lte('start_datetime', endOfDay.toISOString())
+        .neq('status', 'CANCELLED'),
+      supabase
+        .from('time_offs')
+        .select('*')
+        .eq('barber_id', selectedBarber.id)
+        .gte('start_datetime', startOfDay.toISOString())
+        .lte('start_datetime', endOfDay.toISOString())
+    ]);
         
-    if (data) {
-      setBookedAppointments(data as Appointment[]);
+    if (appointmentsRes.data) {
+      setBookedAppointments(appointmentsRes.data as Appointment[]);
+    }
+
+    if (timeOffsRes.data) {
+      setBlockedTimes(timeOffsRes.data.map(t => ({
+        start: new Date(t.start_datetime),
+        end: new Date(t.end_datetime)
+      })));
+    } else {
+      setBlockedTimes([]);
     }
     
     setIsCheckingSlots(false);
@@ -193,6 +211,13 @@ export const CustomerDashboard = () => {
         end: end.getHours() * 60 + end.getMinutes()
       };
     });
+
+    const timeOffRanges = blockedTimes.map(timeOff => {
+      return {
+        start: timeOff.start.getHours() * 60 + timeOff.start.getMinutes(),
+        end: timeOff.end.getHours() * 60 + timeOff.end.getMinutes()
+      };
+    });
     
     let currentMins = startMins;
     const slotInterval = 30; // 30 minutes blocks
@@ -219,8 +244,12 @@ export const CustomerDashboard = () => {
       const overlapsBooked = bookedRanges.some(booked => 
         (slotStart < booked.end && slotEnd > booked.start)
       );
+
+      const overlapsTimeOff = timeOffRanges.some(blocked =>
+        (slotStart < blocked.end && slotEnd > blocked.start)
+      );
       
-      if (!overlapsLunch && !overlapsBooked) {
+      if (!overlapsLunch && !overlapsBooked && !overlapsTimeOff) {
         slots.push(formatTime(slotStart));
       }
       
@@ -276,9 +305,9 @@ export const CustomerDashboard = () => {
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 sm:space-y-8 pb-24">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Agendar Horário</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">Agendar Horário</h1>
         <p className="text-zinc-500 mt-1">Escolha a data, o profissional e o serviço desejado.</p>
       </div>
 
@@ -290,16 +319,16 @@ export const CustomerDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Left Column: Selection */}
-          <div className="lg:col-span-7 xl:col-span-8 space-y-8">
+          <div className="lg:col-span-7 xl:col-span-8 space-y-6 sm:space-y-8">
             
             {/* Step 1: Date Selection */}
             <section>
-              <div className="flex items-center gap-3 mb-5">
+              <div className="flex items-center gap-3 mb-4 sm:mb-5">
                 <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">1</div>
-                <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">Data do Atendimento</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Data do Atendimento</h2>
               </div>
               
-              <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-6 shadow-sm">
+              <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="font-semibold text-zinc-900 capitalize">{formatMonthYear(currentMonth)}</h3>
                   <div className="flex gap-2">
@@ -359,9 +388,9 @@ export const CustomerDashboard = () => {
 
             {/* Step 2: Barber Selection */}
             <section className={!selectedDate ? 'opacity-40 pointer-events-none transition-all duration-300' : 'transition-all duration-300'}>
-              <div className="flex items-center gap-3 mb-5 mt-4">
+              <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
                 <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">2</div>
-                <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">Profissional</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Profissional</h2>
               </div>
               
               {availableBarbers.length === 0 && selectedDate ? (
@@ -369,14 +398,14 @@ export const CustomerDashboard = () => {
                   <p className="text-zinc-500 text-sm">Nenhum profissional disponível nesta data.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {availableBarbers.map((barber) => {
                     const isSelected = selectedBarber?.id === barber.id;
                     return (
                       <button
                         key={barber.id}
                         onClick={() => setSelectedBarber(barber)}
-                        className={`relative flex items-center gap-4 p-4 rounded-2xl border text-left transition-all duration-200 ${
+                        className={`relative flex items-center gap-4 p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 ${
                           isSelected
                             ? 'border-zinc-900 bg-zinc-900/5 shadow-sm'
                             : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
@@ -403,9 +432,9 @@ export const CustomerDashboard = () => {
 
             {/* Step 3: Service Selection */}
             <section className={!selectedBarber ? 'opacity-40 pointer-events-none transition-all duration-300' : 'transition-all duration-300'}>
-              <div className="flex items-center gap-3 mb-5 mt-4">
+              <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
                 <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">3</div>
-                <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">Serviço</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Serviço</h2>
               </div>
               
               <div className="space-y-3">
@@ -415,14 +444,14 @@ export const CustomerDashboard = () => {
                     <button
                       key={service.id}
                       onClick={() => setSelectedService(service)}
-                      className={`relative w-full flex items-center justify-between p-5 rounded-2xl border text-left transition-all duration-200 ${
+                      className={`relative w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 gap-4 sm:gap-0 ${
                         isSelected
                           ? 'border-zinc-900 bg-zinc-900/5 shadow-sm'
                           : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
                       }`}
                     >
-                      <div className="pr-12">
-                        <p className={`font-semibold text-lg ${isSelected ? 'text-zinc-900' : 'text-zinc-800'}`}>{service.name}</p>
+                      <div className="pr-0 sm:pr-12 w-full">
+                        <p className={`font-semibold text-base sm:text-lg ${isSelected ? 'text-zinc-900' : 'text-zinc-800'}`}>{service.name}</p>
                         {service.description && (
                           <p className="text-sm text-zinc-500 mt-1 line-clamp-2">{service.description}</p>
                         )}
@@ -433,14 +462,14 @@ export const CustomerDashboard = () => {
                           </span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2 pl-4 border-l border-zinc-200/50">
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-2 pl-0 sm:pl-4 border-t sm:border-t-0 sm:border-l border-zinc-200/50 pt-3 sm:pt-0 w-full sm:w-auto">
                         <div className="bg-white border border-zinc-200 px-3 py-1.5 rounded-full shadow-sm">
                           <span className="font-bold text-zinc-900 whitespace-nowrap">
                             R$ {Number(service.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>
                         </div>
                         {isSelected && (
-                          <CheckCircle2 className="w-5 h-5 text-zinc-900 mt-1 mr-1" />
+                          <CheckCircle2 className="w-5 h-5 text-zinc-900 mt-0 sm:mt-1 mr-0 sm:mr-1 hidden sm:block" />
                         )}
                       </div>
                     </button>
@@ -452,30 +481,30 @@ export const CustomerDashboard = () => {
             {/* Step 4: Time Selection */}
             {isTimeSelectionVisible && (
               <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center gap-3 mb-5 mt-4">
+                <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
                   <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">4</div>
-                  <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">Horário</h2>
+                  <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Horário</h2>
                 </div>
                 
                 {isCheckingSlots ? (
-                  <div className="flex justify-center p-8 bg-zinc-50 border border-zinc-200 rounded-2xl">
+                  <div className="flex justify-center p-8 bg-zinc-50 border border-zinc-200 rounded-xl sm:rounded-2xl">
                     <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
                   </div>
                 ) : (
-                  <div className="bg-white border border-zinc-200 rounded-3xl p-6 shadow-sm">
+                  <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
                     {generateTimeSlots().length === 0 ? (
                       <div className="text-center py-6">
                         <p className="text-zinc-500 text-sm">Nenhum horário disponível para esta data.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
                         {generateTimeSlots().map((time) => {
                           const isSelected = selectedTime === time;
                           return (
                             <button
                               key={time}
                               onClick={() => setSelectedTime(time)}
-                              className={`py-3 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                              className={`py-2 sm:py-3 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                                 isSelected
                                   ? 'bg-zinc-900 text-white shadow-md ring-2 ring-zinc-900 ring-offset-2'
                                   : 'bg-zinc-50 text-zinc-700 border border-zinc-200 hover:border-zinc-400 hover:bg-zinc-100'
@@ -495,8 +524,8 @@ export const CustomerDashboard = () => {
 
           {/* Right Column: Date & Time & Summary */}
           <div className="lg:col-span-5 xl:col-span-4">
-            <div className="bg-white border border-zinc-200 rounded-3xl p-7 sticky top-24 shadow-sm">
-              <h3 className="text-lg font-semibold text-zinc-900 mb-6 tracking-tight">Resumo do Agendamento</h3>
+            <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-3xl p-5 sm:p-7 sticky top-24 shadow-sm">
+              <h3 className="text-base sm:text-lg font-semibold text-zinc-900 mb-5 sm:mb-6 tracking-tight">Resumo do Agendamento</h3>
               
               <div className="space-y-6 mb-8">
                 <div className="flex items-start gap-4">

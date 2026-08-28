@@ -8,6 +8,7 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   isLoading: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +24,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (session?.user && !profile) {
+        setIsLoading(true);
+      }
       if (session?.user) {
         fetchProfile(session.user.id);
       } else {
@@ -47,7 +51,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchProfile(user.id);
+    }
+  };
+
   const fetchProfile = async (userId: string) => {
+    setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('users')
@@ -71,7 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, isLoading }}>
+    <AuthContext.Provider value={{ session, user, profile, isLoading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

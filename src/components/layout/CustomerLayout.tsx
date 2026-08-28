@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Scissors, LogOut, Calendar, Plus } from 'lucide-react';
+import { Scissors, LogOut, Calendar, Plus, User } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -53,6 +53,13 @@ export const CustomerLayout = () => {
               <p className="text-sm font-medium text-zinc-900">{profile?.full_name}</p>
               <p className="text-xs text-zinc-500">Cliente</p>
             </div>
+            <NavLink
+              to="/customer/profile"
+              className={({ isActive }) => `p-2 rounded-full transition-colors ${isActive ? 'text-zinc-900 bg-zinc-100' : 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-50'}`}
+              title="Meu Perfil"
+            >
+              <User className="w-5 h-5" />
+            </NavLink>
             <button
               onClick={handleLogout}
               className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"

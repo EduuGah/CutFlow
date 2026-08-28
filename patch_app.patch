@@ -1,0 +1,34 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -17,6 +17,7 @@
+ import { ServicesManagement } from './pages/admin/ServicesManagement';
+ import { BarbersManagement } from './pages/admin/BarbersManagement';
+ import { AdminSchedule } from './pages/admin/AdminSchedule';
++import { ProfileSettings } from './pages/shared/ProfileSettings';
+ 
+ function App() {
+   return (
+@@ -32,6 +33,7 @@
+             <Route element={<CustomerLayout />}>
+               <Route path="/customer" element={<CustomerDashboard />} />
+               <Route path="/customer/appointments" element={<CustomerAppointments />} />
++              <Route path="/customer/profile" element={<ProfileSettings />} />
+             </Route>
+           </Route>
+ 
+@@ -40,6 +42,7 @@
+             <Route element={<BarberLayout />}>
+               <Route path="/barber" element={<BarberDashboard />} />
+               <Route path="/barber/time-offs" element={<BarberTimeOffs />} />
++              <Route path="/barber/profile" element={<ProfileSettings />} />
+             </Route>
+           </Route>
+ 
+@@ -51,6 +54,7 @@
+               <Route path="/admin/services" element={<ServicesManagement />} />
+               <Route path="/admin/barbers" element={<BarbersManagement />} />
+               <Route path="/admin/schedule" element={<AdminSchedule />} />
++              <Route path="/admin/profile" element={<ProfileSettings />} />
+             </Route>
+           </Route>
+           
