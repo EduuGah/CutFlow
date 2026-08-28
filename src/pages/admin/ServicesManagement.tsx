@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Loader2, X, AlertCircle } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { Service } from '../../types';
 
@@ -7,15 +7,16 @@ export const ServicesManagement = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // States for modal
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // States for drawer
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   
   // Form fields
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [duration, setDuration] = useState('30');
+  const [duration, setDuration] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -36,50 +37,85 @@ export const ServicesManagement = () => {
     setIsLoading(false);
   };
 
+  const formatPriceInput = (value: string) => {
+    const onlyDigits = value.replace(/\D/g, '');
+    if (!onlyDigits) return '';
+    const numberValue = parseInt(onlyDigits, 10) / 100;
+    return numberValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPrice(formatPriceInput(e.target.value));
+  };
+
   const resetForm = () => {
     setName('');
     setDescription('');
     setPrice('');
-    setDuration('30');
+    setDuration('');
     setIsActive(true);
     setEditingId(null);
+    setSaveError(null);
   };
 
   const handleOpenNew = () => {
     resetForm();
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
   const handleOpenEdit = (service: Service) => {
     setName(service.name);
     setDescription(service.description || '');
-    setPrice(service.price.toString());
+    // Ensure the price displays correctly on edit
+    const formattedPrice = Number(service.price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    setPrice(formattedPrice);
     setDuration(service.duration_minutes.toString());
     setIsActive(service.is_active);
     setEditingId(service.id);
-    setIsModalOpen(true);
+    setSaveError(null);
+    setIsDrawerOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setSaveError(null);
+
+    // Convert formatted price back to float
+    const numericPrice = parseFloat(price.replace(/\./g, '').replace(',', '.'));
 
     const payload = {
       name,
       description: description || null,
-      price: parseFloat(price),
+      price: numericPrice,
       duration_minutes: parseInt(duration),
       is_active: isActive,
     };
 
+    let error = null;
+
     if (editingId) {
-      await supabase.from('services').update(payload).eq('id', editingId);
+      const { error: updateError } = await supabase.from('services').update(payload).eq('id', editingId);
+      error = updateError;
     } else {
-      await supabase.from('services').insert([payload]);
+      const { error: insertError } = await supabase.from('services').insert([payload]);
+      error = insertError;
+    }
+
+    if (error) {
+      console.error("Erro ao salvar:", error);
+      // Catch specific RLS error
+      if (error.code === '42501') {
+        setSaveError("Permissão negada (RLS). Você precisa configurar a política de INSERT/UPDATE no banco de dados.");
+      } else {
+        setSaveError(error.message || "Ocorreu um erro ao salvar o serviço.");
+      }
+      setIsSaving(false);
+      return;
     }
 
     setIsSaving(false);
-    setIsModalOpen(false);
+    setIsDrawerOpen(false);
     fetchServices();
   };
 
@@ -92,7 +128,7 @@ export const ServicesManagement = () => {
         </div>
         <button
           onClick={handleOpenNew}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Novo Serviço
@@ -104,15 +140,19 @@ export const ServicesManagement = () => {
           <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
         </div>
       ) : services.length === 0 ? (
-        <div className="bg-white border border-zinc-200 rounded-xl p-8 text-center">
-          <p className="text-zinc-500">Nenhum serviço cadastrado ainda.</p>
+        <div className="bg-white border border-zinc-200 rounded-xl p-12 text-center flex flex-col items-center">
+          <div className="w-12 h-12 bg-zinc-50 rounded-full flex items-center justify-center mb-4">
+            <Plus className="w-6 h-6 text-zinc-400" />
+          </div>
+          <h3 className="text-sm font-medium text-zinc-900">Nenhum serviço</h3>
+          <p className="text-sm text-zinc-500 mt-1 max-w-sm">Comece adicionando os serviços que sua barbearia oferece para que os clientes possam agendar.</p>
         </div>
       ) : (
-        <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
               <tr>
-                <th className="px-6 py-4 font-medium">Nome</th>
+                <th className="px-6 py-4 font-medium">Serviço</th>
                 <th className="px-6 py-4 font-medium">Preço</th>
                 <th className="px-6 py-4 font-medium">Duração</th>
                 <th className="px-6 py-4 font-medium">Status</th>
@@ -121,11 +161,11 @@ export const ServicesManagement = () => {
             </thead>
             <tbody className="divide-y divide-zinc-200">
               {services.map((service) => (
-                <tr key={service.id} className="hover:bg-zinc-50 transition-colors">
+                <tr key={service.id} className="hover:bg-zinc-50/80 transition-colors">
                   <td className="px-6 py-4">
                     <p className="font-medium text-zinc-900">{service.name}</p>
                     {service.description && (
-                      <p className="text-zinc-500 text-xs truncate max-w-[200px] mt-0.5">
+                      <p className="text-zinc-500 text-xs truncate max-w-xs mt-0.5">
                         {service.description}
                       </p>
                     )}
@@ -136,10 +176,10 @@ export const ServicesManagement = () => {
                   <td className="px-6 py-4 text-zinc-600">{service.duration_minutes} min</td>
                   <td className="px-6 py-4">
                     <span
-                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         service.is_active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-zinc-100 text-zinc-600'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
                       }`}
                     >
                       {service.is_active ? 'Ativo' : 'Inativo'}
@@ -148,7 +188,7 @@ export const ServicesManagement = () => {
                   <td className="px-6 py-4 text-right">
                     <button
                       onClick={() => handleOpenEdit(service)}
-                      className="p-2 text-zinc-400 hover:text-zinc-900 transition-colors"
+                      className="inline-flex p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors"
                       title="Editar"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -161,102 +201,128 @@ export const ServicesManagement = () => {
         </div>
       )}
 
-      {/* Modal - Could be extracted to a separate component later */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="p-6 border-b border-zinc-200">
-              <h2 className="text-xl font-bold text-zinc-900">
+      {/* Drawer Overlay */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div 
+            className="absolute inset-0 bg-zinc-900/30 backdrop-blur-sm transition-opacity"
+            onClick={() => setIsDrawerOpen(false)}
+          />
+          
+          {/* Drawer Panel */}
+          <div className="absolute inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl flex flex-col border-l border-zinc-200 animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-200">
+              <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">
                 {editingId ? 'Editar Serviço' : 'Novo Serviço'}
               </h2>
+              <button
+                onClick={() => setIsDrawerOpen(false)}
+                className="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             
-            <form onSubmit={handleSave} className="p-6 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-zinc-700">Nome do serviço</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-                  placeholder="Ex: Corte Masculino"
-                />
-              </div>
+            <div className="flex-1 overflow-y-auto">
+              <form id="service-form" onSubmit={handleSave} className="p-6 space-y-6">
+                
+                {saveError && (
+                  <div className="p-4 bg-red-50 border border-red-100 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-600">{saveError}</p>
+                  </div>
+                )}
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-zinc-700">Descrição (opcional)</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all resize-none"
-                  placeholder="Ex: Corte na tesoura com lavagem inclusa"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Preço (R$)</label>
+                  <label className="text-sm font-medium text-zinc-900">Nome do serviço</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
                     required
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
-                    placeholder="0.00"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                    placeholder="Ex: Corte Masculino"
                   />
                 </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Duração (min)</label>
-                  <select
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all appearance-none"
-                  >
-                    <option value="15">15 min</option>
-                    <option value="20">20 min</option>
-                    <option value="30">30 min</option>
-                    <option value="45">45 min</option>
-                    <option value="60">1h</option>
-                    <option value="90">1h 30m</option>
-                    <option value="120">2h</option>
-                  </select>
+                  <label className="text-sm font-medium text-zinc-900">Descrição (opcional)</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all resize-none"
+                    placeholder="Explique o que está incluso neste serviço..."
+                  />
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="isActive"
-                  checked={isActive}
-                  onChange={(e) => setIsActive(e.target.checked)}
-                  className="w-4 h-4 text-zinc-900 bg-zinc-50 border-zinc-200 rounded focus:ring-zinc-900"
-                />
-                <label htmlFor="isActive" className="text-sm font-medium text-zinc-700">
-                  Serviço ativo
-                </label>
-              </div>
+                <div className="grid grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-zinc-900">Preço</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span className="text-zinc-500 sm:text-sm">R$</span>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={price}
+                        onChange={handlePriceChange}
+                        className="w-full pl-9 pr-3 py-2 bg-white border border-zinc-200 rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                        placeholder="0,00"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-zinc-900">Duração (minutos)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      placeholder="Ex: 45"
+                    />
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-3 pt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="flex-1 py-2 px-4 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors flex justify-center items-center"
-                >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
-                </button>
-              </div>
-            </form>
+                <div className="pt-2">
+                  <label className="relative flex items-center gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={isActive}
+                      onChange={(e) => setIsActive(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-zinc-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-zinc-900"></div>
+                    <span className="text-sm font-medium text-zinc-900">Serviço Ativo no Catálogo</span>
+                  </label>
+                  <p className="text-xs text-zinc-500 mt-1 pl-14">
+                    Serviços inativos não aparecem para novos agendamentos.
+                  </p>
+                </div>
+              </form>
+            </div>
+
+            <div className="p-6 border-t border-zinc-200 bg-zinc-50/50 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen(false)}
+                className="flex-1 py-2.5 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="service-form"
+                disabled={isSaving || !price || !duration || !name}
+                className="flex-1 py-2.5 px-4 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800 disabled:opacity-50 transition-colors flex justify-center items-center"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Serviço'}
+              </button>
+            </div>
           </div>
         </div>
       )}

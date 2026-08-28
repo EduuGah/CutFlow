@@ -91,6 +91,21 @@ create policy "Usuários podem atualizar o próprio perfil" on public.users
 create policy "Todos autenticados podem ver os serviços" on public.services
   for select using (auth.role() = 'authenticated');
 
+create policy "Admins podem inserir serviços" on public.services
+  for insert with check (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
+create policy "Admins podem atualizar serviços" on public.services
+  for update using (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
+create policy "Admins podem deletar serviços" on public.services
+  for delete using (
+    exists (select 1 from public.users where id = auth.uid() and role = 'ADMIN')
+  );
+
 -- APPOINTMENTS: Clientes veem os seus, Barbeiros veem os seus
 create policy "Clientes veem seus próprios agendamentos" on public.appointments
   for select using (auth.uid() = customer_id);
