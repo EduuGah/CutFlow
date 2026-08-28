@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/layout/ProtectedRoute';
 
 // Pages placeholders
 import { Login } from './pages/auth/Login';
+import { Register } from './pages/auth/Register';
 import { CustomerDashboard } from './pages/customer/CustomerDashboard';
 import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
@@ -16,6 +17,7 @@ function App() {
         <Routes>
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           
           {/* Rota inicial provisória para testes */}
           <Route path="/" element={<Navigate to="/login" replace />} />

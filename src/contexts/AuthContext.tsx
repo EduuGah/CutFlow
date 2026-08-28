@@ -53,10 +53,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Erro ao buscar perfil:', error.message);
+      } else if (!data) {
+        console.warn('Perfil não encontrado no banco de dados para este usuário.');
+        setProfile(null);
       } else {
         setProfile(data as UserProfile);
       }

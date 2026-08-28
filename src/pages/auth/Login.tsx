@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Loader2 } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,7 +10,7 @@ export const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { profile } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   // Redireciona o usuário caso ele já esteja logado e o perfil carregado
@@ -19,8 +19,10 @@ export const Login = () => {
       if (profile.role === 'ADMIN') navigate('/admin', { replace: true });
       else if (profile.role === 'BARBER') navigate('/barber', { replace: true });
       else navigate('/customer', { replace: true });
+    } else if (user && !authLoading) {
+      setError("Login feito, mas perfil não encontrado. Você rodou o script SQL no painel do Supabase?");
     }
-  }, [profile, navigate]);
+  }, [profile, user, authLoading, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +118,15 @@ export const Login = () => {
             )}
           </button>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-zinc-600">
+            Ainda não tem conta?{' '}
+            <Link to="/register" className="font-medium text-zinc-900 hover:underline">
+              Cadastre-se para testar
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
