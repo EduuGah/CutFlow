@@ -1,5 +1,7 @@
 
-/** A marca é o próprio poste: hélice parada, que gira ao passar o mouse. */
+import { Scissors } from 'lucide-react';
+
+/** A marca agora usa um design mais moderno com ícone de tesoura. */
 export const Logo = ({
   tone = 'dark',
   suffix,
@@ -10,22 +12,30 @@ export const Logo = ({
   className?: string;
 }) => (
   <span className={`group inline-flex items-center gap-2.5 ${className}`}>
-    <span
-      className="pole h-7 w-7 flex-none rounded-lg"
-      style={{ ['--pole-a' as string]: '#e6bc68', ['--pole-b' as string]: '#14392e' }}
-      aria-hidden="true"
+    <div
+      className={`flex h-9 w-9 items-center justify-center rounded-[10px] overflow-hidden ${
+        tone === 'dark' ? 'bg-pine' : 'bg-white'
+      } shadow-card transition-transform group-hover:scale-105`}
     >
-      <span className="pole-stripes pole-stripes-hover absolute inset-0" />
-    </span>
+      <img 
+        src="/logo.png" 
+        alt="CutFlow Logo" 
+        className="h-full w-full object-cover scale-[1.35]" 
+      />
+    </div>
     <span className="flex items-baseline gap-1.5">
       <span
-        className={`type-sign text-[1.35rem] ${tone === 'dark' ? 'text-ink' : 'text-white'}`}
+        className={`type-sign text-[1.35rem] tracking-tight ${
+          tone === 'dark' ? 'text-ink' : 'text-white'
+        }`}
       >
         CutFlow
       </span>
       {suffix && (
         <span
-          className={`type-tag ${tone === 'dark' ? 'text-brass-deep' : 'text-brass-bright'}`}
+          className={`type-tag font-semibold ${
+            tone === 'dark' ? 'text-brass-deep' : 'text-brass-bright'
+          }`}
         >
           {suffix}
         </span>

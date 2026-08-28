@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock, Users } from 'lucide-react';
+import { Clock, Users, Plus, Mail, Lock, UserRound } from 'lucide-react';
 import { supabase } from '../../config/supabase';
+import { getSecondarySupabase } from '../../config/supabaseSecondary';
 import { BarberSchedule, UserProfile } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui/Button';
-import { Drawer } from '../../components/ui/Modal';
+import { Drawer, Modal } from '../../components/ui/Modal';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Notice } from '../../components/ui/Field';
+import { Field, Notice } from '../../components/ui/Field';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
@@ -48,6 +50,8 @@ const initials = (name: string) =>
 
 export const BarbersManagement = () => {
   const toast = useToast();
+  const { profile } = useAuth();
+  
   const [barbers, setBarbers] = useState<UserProfile[]>([]);
   const [allSchedules, setAllSchedules] = useState<BarberSchedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +61,13 @@ export const BarbersManagement = () => {
   const [days, setDays] = useState<Record<number, DayForm>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newBarberName, setNewBarberName] = useState('');
+  const [newBarberEmail, setNewBarberEmail] = useState('');
+  const [newBarberPassword, setNewBarberPassword] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -179,13 +190,53 @@ export const BarbersManagement = () => {
     fetchData();
   };
 
+  const handleAddBarber = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsAdding(true);
+    setAddError(null);
+
+    const secondarySupabase = getSecondarySupabase();
+    const { error: signUpError } = await secondarySupabase.auth.signUp({
+      email: newBarberEmail,
+      password: newBarberPassword,
+      options: {
+        data: {
+          full_name: newBarberName,
+          role: 'BARBER',
+          barbershop_id: profile?.barbershop_id,
+        },
+      },
+    });
+
+    if (signUpError) {
+      console.error(signUpError);
+      setAddError(signUpError.message);
+      setIsAdding(false);
+      return;
+    }
+
+    toast.success('Barbeiro adicionado com sucesso!');
+    setIsAdding(false);
+    setIsAddOpen(false);
+    setNewBarberName('');
+    setNewBarberEmail('');
+    setNewBarberPassword('');
+    fetchData();
+  };
+
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <PageHeader
-        eyebrow="Equipe"
-        title="Barbeiros"
-        description="Quem atende na casa e em quais dias e horários cada um trabalha."
-      />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <PageHeader
+          eyebrow="Equipe"
+          title="Barbeiros"
+          description="Quem atende na casa e em quais dias e horários cada um trabalha."
+        />
+        <Button onClick={() => setIsAddOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Adicionar Barbeiro
+        </Button>
+      </div>
 
       {isLoading ? (
         <TableSkeleton rows={3} cols={3} />
@@ -359,6 +410,71 @@ export const BarbersManagement = () => {
           })}
         </form>
       </Drawer>
+
+      <Modal
+        open={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        title="Adicionar Barbeiro"
+        description="Crie o acesso para um novo barbeiro da sua equipe."
+      >
+        <form onSubmit={handleAddBarber} className="space-y-4">
+          {addError && <Notice tone="error">{addError}</Notice>}
+
+          <Field label="Nome do barbeiro" htmlFor="newBarberName" icon={UserRound}>
+            <input
+              id="newBarberName"
+              type="text"
+              required
+              value={newBarberName}
+              onChange={(e) => setNewBarberName(e.target.value)}
+              className="input input-icon"
+              placeholder="Ex: Joel"
+              disabled={isAdding}
+            />
+          </Field>
+
+          <Field label="E-mail de acesso" htmlFor="newBarberEmail" icon={Mail}>
+            <input
+              id="newBarberEmail"
+              type="email"
+              required
+              value={newBarberEmail}
+              onChange={(e) => setNewBarberEmail(e.target.value)}
+              className="input input-icon"
+              placeholder="joel@barbearia.com"
+              disabled={isAdding}
+            />
+          </Field>
+
+          <Field label="Senha temporária" htmlFor="newBarberPassword" icon={Lock}>
+            <input
+              id="newBarberPassword"
+              type="password"
+              required
+              minLength={6}
+              value={newBarberPassword}
+              onChange={(e) => setNewBarberPassword(e.target.value)}
+              className="input input-icon"
+              placeholder="Mínimo 6 caracteres"
+              disabled={isAdding}
+            />
+          </Field>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              loading={isAdding}
+              loadingLabel="Criando"
+              disabled={!newBarberName || !newBarberEmail || !newBarberPassword}
+            >
+              Criar acesso
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
