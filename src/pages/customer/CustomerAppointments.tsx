@@ -1,8 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarPlus, Clock, Scissors, Star, UserRound } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Scissors, User, Loader2, CheckCircle2, Star, X } from 'lucide-react';
 import { AppointmentStatus } from '../../types';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Modal } from '../../components/ui/Modal';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { AppointmentCardsSkeleton } from '../../components/ui/Skeleton';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { useToast } from '../../components/ui/Toast';
+
+interface Review {
+  id: string;
+  rating: number;
+  comment: string | null;
+}
 
 interface AppointmentData {
   id: string;
@@ -12,41 +26,48 @@ interface AppointmentData {
   barber_id: string;
   barber: { full_name: string };
   service: { name: string; price: number; duration_minutes: number };
-  review?: { id: string; rating: number; comment: string | null }[] | any;
+  review?: Review[] | Review | null;
 }
+
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+const firstReview = (value: AppointmentData['review']): Review | null => {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+};
 
 export const CustomerAppointments = () => {
   const { profile } = useAuth();
+  const toast = useToast();
+
   const [appointments, setAppointments] = useState<AppointmentData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
 
-  // Review Modal State
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [reviewingAppointment, setReviewingAppointment] = useState<AppointmentData | null>(null);
+  const [reviewing, setReviewing] = useState<AppointmentData | null>(null);
   const [rating, setRating] = useState(5);
+  const [hoveredStar, setHoveredStar] = useState(0);
   const [comment, setComment] = useState('');
-  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchAppointments = async () => {
     if (!profile) return;
     setIsLoading(true);
+
     const { data, error } = await supabase
       .from('appointments')
-      .select(`
-        id,
-        start_datetime,
-        end_datetime,
-        status,
-        barber_id,
-        barber:users!barber_id(full_name),
-        service:services!service_id(name, price, duration_minutes),
-        review:reviews(id, rating, comment)
-      `)
+      .select(
+        `id, start_datetime, end_datetime, status, barber_id,
+         barber:users!barber_id(full_name),
+         service:services!service_id(name, price, duration_minutes),
+         review:reviews(id, rating, comment)`
+      )
       .eq('customer_id', profile.id)
       .order('start_datetime', { ascending: false });
 
     if (error) {
-      console.error('Error fetching appointments:', error);
+      console.error(error);
+      toast.error('Não deu para carregar seus horários. Recarregue a página.');
     } else if (data) {
       setAppointments(data as unknown as AppointmentData[]);
     }
@@ -55,262 +76,309 @@ export const CustomerAppointments = () => {
 
   useEffect(() => {
     fetchAppointments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  const openReviewModal = (appointment: AppointmentData) => {
-    setReviewingAppointment(appointment);
+  const { upcoming, past } = useMemo(() => {
+    const now = new Date();
+    return {
+      upcoming: appointments.filter(
+        (item) => new Date(item.start_datetime) >= now && item.status !== 'CANCELLED'
+      ),
+      past: appointments.filter(
+        (item) => new Date(item.start_datetime) < now || item.status === 'CANCELLED'
+      ),
+    };
+  }, [appointments]);
+
+  const openReview = (appointment: AppointmentData) => {
+    setReviewing(appointment);
     setRating(5);
+    setHoveredStar(0);
     setComment('');
-    setIsReviewModalOpen(true);
   };
 
-  const closeReviewModal = () => {
-    setIsReviewModalOpen(false);
-    setReviewingAppointment(null);
-  };
+  const submitReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profile || !reviewing) return;
 
-  const submitReview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile || !reviewingAppointment) return;
-
-    setIsSubmittingReview(true);
+    setIsSubmitting(true);
     const { error } = await supabase.from('reviews').insert([
       {
-        appointment_id: reviewingAppointment.id,
+        appointment_id: reviewing.id,
         customer_id: profile.id,
-        barber_id: reviewingAppointment.barber_id,
+        barber_id: reviewing.barber_id,
         rating,
         comment: comment || null,
-      }
+      },
     ]);
-
-    setIsSubmittingReview(false);
+    setIsSubmitting(false);
 
     if (error) {
-      console.error('Error submitting review:', error);
-      alert('Erro ao enviar avaliação: ' + error.message);
-    } else {
-      closeReviewModal();
-      fetchAppointments();
+      console.error(error);
+      toast.error(`A avaliação não foi enviada: ${error.message}`);
+      return;
     }
+
+    setReviewing(null);
+    toast.success('Avaliação enviada.');
+    fetchAppointments();
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center p-12">
-        <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-      </div>
-    );
-  }
-
-  const upcoming = appointments.filter(a => new Date(a.start_datetime) >= new Date() && a.status !== 'CANCELLED');
-  const past = appointments.filter(a => new Date(a.start_datetime) < new Date() || a.status === 'CANCELLED');
-
-  const AppointmentCard = ({ appointment, isPast = false }: { appointment: AppointmentData, isPast?: boolean }) => {
-    const date = new Date(appointment.start_datetime);
-    
-    // Check if appointment is strictly COMPLETED to allow reviews
-    const isCompleted = appointment.status === 'COMPLETED';
-    
-    // Supabase can return an object or array for one-to-one relations depending on the query
-    const existingReview = Array.isArray(appointment.review) 
-      ? appointment.review[0] 
-      : appointment.review && appointment.review.id ? appointment.review : null;
-
-    return (
-      <div className={`bg-white border rounded-3xl p-6 flex flex-col justify-between ${isPast ? 'border-zinc-200/60 opacity-80' : 'border-zinc-200 shadow-sm'}`}>
-        <div>
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isPast ? 'bg-zinc-50 text-zinc-400' : 'bg-zinc-900 text-white'}`}>
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <p className={`font-semibold capitalize ${isPast ? 'text-zinc-600' : 'text-zinc-900'}`}>
-                  {date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-                </p>
-                <p className={`text-sm font-medium flex items-center gap-1.5 mt-0.5 ${isPast ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  <Clock className="w-4 h-4" />
-                  {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
-            </div>
-            {appointment.status === 'CANCELLED' ? (
-              <span className="px-3 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-full uppercase tracking-wider">
-                Cancelado
-              </span>
-            ) : appointment.status === 'COMPLETED' ? (
-              <span className="px-3 py-1 bg-zinc-100 text-zinc-500 text-xs font-semibold rounded-full uppercase tracking-wider">
-                Concluído
-              </span>
-            ) : isPast ? (
-              <span className="px-3 py-1 bg-zinc-100 text-zinc-400 text-xs font-semibold rounded-full uppercase tracking-wider">
-                Passado
-              </span>
-            ) : (
-              <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-full flex items-center gap-1 uppercase tracking-wider">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Confirmado
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-zinc-100">
-            <div className="flex items-start gap-3">
-              <User className="w-5 h-5 text-zinc-400 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Profissional</p>
-                <p className="text-sm font-medium text-zinc-900">{appointment.barber?.full_name}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start gap-3">
-              <Scissors className="w-5 h-5 text-zinc-400 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Serviço</p>
-                <p className="text-sm font-medium text-zinc-900">{appointment.service?.name}</p>
-                <p className="text-xs text-zinc-500 mt-0.5">{appointment.service?.duration_minutes} min</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Review Section (only for completed appointments) */}
-        {isCompleted && (
-          <div className="mt-6 pt-6 border-t border-zinc-100">
-            {existingReview ? (
-              <div className="flex items-start justify-between bg-zinc-50 p-4 rounded-2xl">
-                <div>
-                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Sua Avaliação</p>
-                  <div className="flex items-center gap-1 mb-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star key={star} className={`w-4 h-4 ${star <= existingReview.rating ? 'fill-amber-400 text-amber-400' : 'fill-zinc-200 text-zinc-200'}`} />
-                    ))}
-                  </div>
-                  {existingReview.comment && (
-                    <p className="text-sm text-zinc-700 mt-2 italic">"{existingReview.comment}"</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <button 
-                onClick={() => openReviewModal(appointment)}
-                className="w-full py-2.5 flex items-center justify-center gap-2 bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 font-medium rounded-xl transition-colors text-sm"
-              >
-                <Star className="w-4 h-4" />
-                Avaliar Atendimento
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const list = tab === 'upcoming' ? upcoming : past;
 
   return (
-    <div className="space-y-10 pb-20">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Meus Agendamentos</h1>
-        <p className="text-zinc-500 mt-1">Acompanhe seus horários marcados e histórico.</p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Meus horários"
+        title="Seus agendamentos"
+        description="O que está por vir e tudo o que já passou pela cadeira."
+        actions={
+          <Link to="/customer" className="btn btn-primary">
+            <CalendarPlus className="h-4 w-4" />
+            Marcar horário
+          </Link>
+        }
+      />
 
-      {appointments.length === 0 ? (
-        <div className="text-center py-12 bg-white border border-zinc-200 rounded-3xl">
-          <Calendar className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-          <p className="text-zinc-600 font-medium">Você ainda não tem nenhum agendamento.</p>
-        </div>
+      {isLoading ? (
+        <AppointmentCardsSkeleton />
+      ) : appointments.length === 0 ? (
+        <EmptyState
+          icon={CalendarPlus}
+          title="Nenhum horário ainda"
+          description="Escolha um dia, um profissional e um serviço para marcar o primeiro corte."
+          action={
+            <Link to="/customer" className="btn btn-primary">
+              Marcar meu primeiro horário
+            </Link>
+          }
+        />
       ) : (
         <>
-          {upcoming.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-zinc-900 mb-4">Próximos Horários</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {upcoming.map(app => (
-                  <AppointmentCard key={app.id} appointment={app} />
-                ))}
-              </div>
-            </section>
-          )}
+          <div
+            className="inline-flex gap-1 rounded-xl border border-line bg-porcelain p-1"
+            role="tablist"
+            aria-label="Filtrar agendamentos"
+          >
+            {(
+              [
+                ['upcoming', 'Próximos', upcoming.length],
+                ['past', 'Histórico', past.length],
+              ] as const
+            ).map(([value, label, count]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={tab === value}
+                onClick={() => setTab(value)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                  tab === value
+                    ? 'bg-pine text-white shadow-card'
+                    : 'text-smoke hover:bg-chalk hover:text-ink'
+                }`}
+              >
+                {label}
+                <span className="type-num ml-2 text-xs opacity-60">{count}</span>
+              </button>
+            ))}
+          </div>
 
-          {past.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold text-zinc-900 mb-4">Histórico</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {past.map(app => (
-                  <AppointmentCard key={app.id} appointment={app} isPast={true} />
-                ))}
-              </div>
-            </section>
+          {list.length === 0 ? (
+            <EmptyState
+              icon={CalendarPlus}
+              title={tab === 'upcoming' ? 'Nada marcado por enquanto' : 'Histórico vazio'}
+              description={
+                tab === 'upcoming'
+                  ? 'Quando você marcar um horário, ele aparece aqui com todos os detalhes.'
+                  : 'Os atendimentos concluídos e cancelados ficam guardados nesta aba.'
+              }
+              action={
+                tab === 'upcoming' ? (
+                  <Link to="/customer" className="btn btn-primary">
+                    Marcar horário
+                  </Link>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div key={tab} className="grid gap-4 lg:grid-cols-2">
+              {list.map((appointment, index) => (
+                <AppointmentCard
+                  key={appointment.id}
+                  appointment={appointment}
+                  index={index}
+                  muted={tab === 'past'}
+                  onReview={openReview}
+                />
+              ))}
+            </div>
           )}
         </>
       )}
 
-      {/* Review Modal */}
-      {isReviewModalOpen && reviewingAppointment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" onClick={closeReviewModal} />
-          
-          <div className="bg-white rounded-3xl w-full max-w-md relative z-10 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-zinc-100">
-              <h3 className="text-lg font-bold text-zinc-900">Avaliar Atendimento</h3>
-              <button onClick={closeReviewModal} className="p-2 -mr-2 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={submitReview} className="p-6 space-y-6">
-              <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-zinc-500">Como foi seu corte com</p>
-                <p className="text-xl font-bold text-zinc-900">{reviewingAppointment.barber?.full_name}?</p>
-              </div>
-
-              <div className="flex justify-center gap-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setRating(star)}
-                    className="p-1 focus:outline-none hover:scale-110 transition-transform"
-                  >
-                    <Star className={`w-10 h-10 ${star <= rating ? 'fill-amber-400 text-amber-400' : 'fill-zinc-100 text-zinc-200 hover:text-zinc-300'}`} />
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="comment" className="block text-sm font-medium text-zinc-700">
-                  Comentário (opcional)
-                </label>
-                <textarea
-                  id="comment"
-                  rows={3}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Conte um pouco sobre sua experiência..."
-                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 resize-none"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
+      {/* Avaliação */}
+      <Modal
+        open={Boolean(reviewing)}
+        onClose={() => setReviewing(null)}
+        title="Avaliar atendimento"
+        description={reviewing ? `Corte com ${reviewing.barber?.full_name}` : undefined}
+      >
+        <form onSubmit={submitReview} className="space-y-6 p-6">
+          <div className="flex justify-center gap-1.5">
+            {[1, 2, 3, 4, 5].map((star) => {
+              const active = star <= (hoveredStar || rating);
+              return (
                 <button
+                  key={star}
                   type="button"
-                  onClick={closeReviewModal}
-                  className="flex-1 px-4 py-3 bg-white border border-zinc-200 text-zinc-700 font-medium rounded-xl hover:bg-zinc-50 transition-colors"
+                  onClick={() => setRating(star)}
+                  onMouseEnter={() => setHoveredStar(star)}
+                  onMouseLeave={() => setHoveredStar(0)}
+                  onFocus={() => setHoveredStar(star)}
+                  onBlur={() => setHoveredStar(0)}
+                  className="rounded-lg p-1 transition-transform duration-200 hover:scale-115 focus-visible:scale-115"
+                  aria-label={`${star} ${star === 1 ? 'estrela' : 'estrelas'}`}
+                  aria-pressed={rating === star}
                 >
-                  Cancelar
+                  <Star
+                    className={`h-9 w-9 transition-colors duration-200 ${
+                      active ? 'fill-brass text-brass' : 'fill-chalk-deep text-chalk-deep'
+                    }`}
+                  />
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingReview}
-                  className="flex-1 px-4 py-3 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isSubmittingReview ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enviar Avaliação'}
-                </button>
-              </div>
-            </form>
+              );
+            })}
+          </div>
+
+          <div>
+            <label htmlFor="review-comment" className="label">
+              Comentário (opcional)
+            </label>
+            <textarea
+              id="review-comment"
+              rows={3}
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="O que funcionou bem? O que poderia melhorar?"
+              className="input resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" block onClick={() => setReviewing(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" block loading={isSubmitting} loadingLabel="Enviando">
+              Enviar avaliação
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------- Cartão */
+
+const AppointmentCard = ({
+  appointment,
+  index,
+  muted,
+  onReview,
+}: {
+  appointment: AppointmentData;
+  index: number;
+  muted: boolean;
+  onReview: (appointment: AppointmentData) => void;
+}) => {
+  const date = new Date(appointment.start_datetime);
+  const review = firstReview(appointment.review);
+
+  return (
+    <article
+      className={`card card-interactive anim-rise-sm flex flex-col p-5 ${
+        muted ? 'bg-porcelain/70' : ''
+      }`}
+      style={{ ['--d' as string]: `${index * 70}ms` }}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div
+            className={`flex h-13 w-13 flex-none flex-col items-center justify-center rounded-xl px-3 py-2 ${
+              muted ? 'bg-chalk text-smoke' : 'bg-pine text-white'
+            }`}
+          >
+            <span className="type-display text-xl leading-none">{date.getDate()}</span>
+            <span className="type-tag mt-1 opacity-70">{MONTHS[date.getMonth()]}</span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink capitalize">
+              {date.toLocaleDateString('pt-BR', { weekday: 'long' })}
+            </p>
+            <p className="type-num mt-1 flex items-center gap-1.5 text-sm text-smoke">
+              <Clock className="h-3.5 w-3.5" />
+              {date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </p>
           </div>
         </div>
+        <StatusPill status={appointment.status} />
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 border-t border-line-soft pt-5 sm:grid-cols-2">
+        <div className="flex items-start gap-2.5">
+          <UserRound className="mt-0.5 h-4 w-4 flex-none text-ash" />
+          <div className="min-w-0">
+            <p className="type-tag text-ash">Profissional</p>
+            <p className="mt-1 truncate text-sm font-medium text-ink">
+              {appointment.barber?.full_name}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-start gap-2.5">
+          <Scissors className="mt-0.5 h-4 w-4 flex-none text-ash" />
+          <div className="min-w-0">
+            <p className="type-tag text-ash">Serviço</p>
+            <p className="mt-1 truncate text-sm font-medium text-ink">
+              {appointment.service?.name}
+            </p>
+            <p className="type-num mt-0.5 text-xs text-smoke">
+              {appointment.service?.duration_minutes} min
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {appointment.status === 'COMPLETED' && (
+        <div className="mt-5 border-t border-line-soft pt-5">
+          {review ? (
+            <div className="rounded-xl bg-chalk px-4 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <p className="type-tag text-ash">Sua nota</p>
+                <span className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`h-3.5 w-3.5 ${
+                        star <= review.rating ? 'fill-brass text-brass' : 'fill-line text-line'
+                      }`}
+                    />
+                  ))}
+                </span>
+              </div>
+              {review.comment && (
+                <p className="mt-2 text-sm leading-relaxed text-graphite">“{review.comment}”</p>
+              )}
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" block onClick={() => onReview(appointment)}>
+              <Star className="h-4 w-4" />
+              Avaliar atendimento
+            </Button>
+          )}
+        </div>
       )}
-    </div>
+    </article>
   );
 };

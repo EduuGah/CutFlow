@@ -1,92 +1,330 @@
-import React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Scissors, Calendar, Clock, Star, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import { Logo } from '../../components/ui/Logo';
+import { Reveal } from '../../components/ui/Reveal';
+
+/* ---------------------------------------------------------------------------
+   Quadro de horários — o herói da página.
+   Em vez de descrever o produto, a página mostra o objeto que o produto
+   manipula: a coluna de horários de um barbeiro, com vagas sendo tomadas e
+   abertas em tempo real.
+--------------------------------------------------------------------------- */
+
+const SLOTS = [
+  '09:00', '09:45', '10:30', '11:15', '13:00',
+  '13:45', '14:30', '15:15', '16:00', '16:45',
+];
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const SlotBoard = () => {
+  const [taken, setTaken] = useState<string[]>(['09:00', '11:15', '14:30']);
+  const [justChanged, setJustChanged] = useState<string | null>(null);
+  const takenRef = useRef(taken);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+
+    const timer = window.setInterval(() => {
+      const current = takenRef.current;
+      const free = SLOTS.filter((slot) => !current.includes(slot));
+      if (free.length === 0) return;
+
+      const claimed = free[Math.floor(Math.random() * free.length)];
+      // O quadro respira: entra uma marcação nova, a mais antiga volta a abrir.
+      const next = current.length >= 5 ? [...current.slice(1), claimed] : [...current, claimed];
+
+      takenRef.current = next;
+      setTaken(next);
+      setJustChanged(claimed);
+    }, 2600);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const freeCount = SLOTS.length - taken.length;
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] backdrop-blur-sm">
+      <span
+        className="pole-stripes pole-stripes-still absolute inset-y-0 left-0 w-1.5"
+        style={{ ['--pole-a' as string]: '#e6bc68', ['--pole-b' as string]: '#0f2a22' }}
+        aria-hidden="true"
+      />
+
+      <header className="flex items-end justify-between gap-4 border-b border-white/10 px-6 py-5 pl-8">
+        <div>
+          <p className="type-tag text-brass-bright">
+            Hoje ·{' '}
+            {new Date().toLocaleDateString('pt-BR', { weekday: 'long' }).replace(/-feira$/, '')}
+          </p>
+          <p className="type-sign mt-2 text-2xl text-white">Ricardo Alves</p>
+        </div>
+        <p className="type-num text-right text-sm text-white/50">
+          <span
+            key={freeCount}
+            className="anim-tick block text-2xl font-medium text-white"
+          >
+            {freeCount}
+          </span>
+          livres
+        </p>
+      </header>
+
+      <ul className="grid grid-cols-2 gap-2 p-6 pl-8 sm:grid-cols-2">
+        {SLOTS.map((slot, index) => {
+          const isTaken = taken.includes(slot);
+          return (
+            <li
+              key={slot}
+              className="anim-rise-sm"
+              style={{ ['--d' as string]: `${260 + index * 55}ms` }}
+            >
+              <span
+                className={`type-num flex items-center justify-between rounded-lg border px-3.5 py-3 text-sm transition-all duration-500 ${
+                  isTaken
+                    ? 'border-white/5 bg-transparent text-white/25 line-through'
+                    : 'border-white/12 bg-white/[0.06] text-white'
+                } ${justChanged === slot && isTaken ? 'anim-pop' : ''}`}
+              >
+                {slot}
+                {!isTaken && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-brass-bright" aria-hidden="true" />
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <p className="border-t border-white/10 px-6 py-4 pl-8 text-xs text-white/40">
+        Almoço, folga e agenda cheia já saem da conta.
+      </p>
+    </div>
+  );
+};
+
+/* ---------------------------------------------------------------------------
+   Página
+--------------------------------------------------------------------------- */
+
+const STEPS = [
+  {
+    title: 'Escolha o dia e o profissional',
+    body: 'O calendário só oferece quem realmente atende naquele dia da semana.',
+  },
+  {
+    title: 'Veja os horários que sobraram',
+    body: 'A duração do serviço entra na conta, então nenhum encaixe fica pela metade.',
+  },
+  {
+    title: 'Confirme e pronto',
+    body: 'O horário some da agenda de todo mundo no mesmo instante.',
+  },
+];
+
+const ROLES = [
+  {
+    tag: 'Cliente',
+    title: 'Marca, acompanha e avalia',
+    body: 'Histórico completo, próximos horários e uma nota para o barbeiro depois do corte.',
+  },
+  {
+    tag: 'Barbeiro',
+    title: 'Comanda o próprio dia',
+    body: 'Inicia e conclui atendimentos, vê o telefone do cliente e bloqueia ausências sozinho.',
+  },
+  {
+    tag: 'Dono',
+    title: 'Enxerga a casa inteira',
+    body: 'Receita do dia, agenda de toda a equipe, catálogo de serviços e horários de trabalho.',
+  },
+];
 
 export const Landing = () => {
+  const year = useMemo(() => new Date().getFullYear(), []);
+
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans selection:bg-zinc-900 selection:text-white">
-      {/* Navigation */}
-      <nav className="w-full px-6 py-4 flex items-center justify-between max-w-7xl mx-auto">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center shadow-md">
-            <Scissors className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-pine-deep text-white">
+      {/* Luz de vitrine atrás do herói */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[560px] opacity-70"
+        style={{
+          background:
+            'radial-gradient(60% 55% at 72% 8%, rgba(189,138,44,0.22), transparent 70%)',
+        }}
+        aria-hidden="true"
+      />
+
+      <div className="relative">
+        <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
+          <Logo tone="light" />
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link
+              to="/login"
+              className="link-underline px-1 text-sm font-medium text-white/70 transition-colors hover:text-white"
+            >
+              Entrar
+            </Link>
+            <Link to="/register" className="btn btn-brass btn-sm sm:px-5">
+              Criar conta
+            </Link>
           </div>
-          <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link to="/login" className="text-sm font-semibold text-zinc-600 hover:text-zinc-900 transition-colors">
-            Entrar
-          </Link>
-          <Link to="/register" className="px-5 py-2.5 bg-zinc-900 text-white text-sm font-semibold rounded-full shadow-md hover:bg-zinc-800 transition-all hover:scale-105 active:scale-95">
-            Criar Conta
-          </Link>
-        </div>
-      </nav>
+        </nav>
 
-      {/* Hero Section */}
-      <main className="max-w-7xl mx-auto px-6 pt-20 pb-32 flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-200/50 text-zinc-700 text-sm font-medium mb-8">
-          <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-          A barbearia do futuro chegou
-        </div>
-        
-        <h1 className="text-5xl md:text-7xl font-extrabold text-zinc-900 tracking-tight max-w-4xl leading-[1.1]">
-          Seu estilo, seu tempo, <br className="hidden md:block"/> <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-500 to-zinc-900">nossa prioridade.</span>
-        </h1>
-        
-        <p className="mt-8 text-lg md:text-xl text-zinc-500 max-w-2xl font-medium leading-relaxed">
-          Agende seu horário em segundos com os melhores profissionais da cidade. 
-          Sem ligações, sem espera. Simples e direto ao ponto.
-        </p>
+        {/* Herói */}
+        <header className="mx-auto grid max-w-6xl items-center gap-14 px-5 pt-12 pb-24 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20 lg:pt-20 lg:pb-32">
+          <div>
+            <p
+              className="type-tag anim-fade flex items-center gap-3 text-brass-bright"
+              style={{ ['--d' as string]: '80ms' }}
+            >
+              <span className="h-px w-8 bg-brass/50" aria-hidden="true" />
+              Agenda de barbearia
+            </p>
 
-        <div className="mt-10 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <Link 
-            to="/register" 
-            className="w-full sm:w-auto px-8 py-4 bg-zinc-900 text-white text-lg font-bold rounded-2xl shadow-xl shadow-zinc-900/20 hover:bg-zinc-800 transition-all hover:-translate-y-1 flex items-center justify-center gap-2"
-          >
-            Agendar Agora
-            <ArrowRight className="w-5 h-5" />
-          </Link>
-        </div>
+            <h1
+              className="type-display anim-rise mt-6 text-[3.25rem] leading-[0.92] sm:text-[4.5rem] lg:text-[5.25rem]"
+              style={{ ['--d' as string]: '140ms' }}
+            >
+              Escolha o horário.
+              <br />
+              <span className="text-brass-bright">Sente na cadeira.</span>
+            </h1>
 
-        {/* Features Preview */}
-        <div className="mt-32 grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
-          <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm text-left">
-            <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center mb-6">
-              <Calendar className="w-6 h-6 text-zinc-900" />
+            <p
+              className="anim-rise mt-7 max-w-lg text-lg leading-relaxed text-white/65"
+              style={{ ['--d' as string]: '240ms' }}
+            >
+              O CutFlow mostra as vagas que cada profissional tem livre de verdade. Você
+              escolhe, confirma e o horário sai da agenda de todo mundo na hora.
+            </p>
+
+            <div
+              className="anim-rise mt-10 flex flex-col gap-3 sm:flex-row sm:items-center"
+              style={{ ['--d' as string]: '330ms' }}
+            >
+              <Link to="/register" className="btn btn-brass btn-lg group">
+                Criar conta e agendar
+                <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+              </Link>
+              <Link
+                to="/login"
+                className="btn btn-lg border-white/15 bg-white/5 text-white hover:bg-white/10"
+              >
+                Já tenho conta
+              </Link>
             </div>
-            <h3 className="text-xl font-bold text-zinc-900 mb-3">Agenda Inteligente</h3>
-            <p className="text-zinc-500 font-medium">Veja os horários disponíveis em tempo real e escolha o que melhor se adapta à sua rotina.</p>
-          </div>
-          
-          <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm text-left relative overflow-hidden">
-            <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center mb-6 relative z-10">
-              <Scissors className="w-6 h-6 text-zinc-900" />
-            </div>
-            <h3 className="text-xl font-bold text-zinc-900 mb-3 relative z-10">Serviços Premium</h3>
-            <p className="text-zinc-500 font-medium relative z-10">De cortes clássicos a tratamentos completos, tudo com a máxima qualidade e cuidado.</p>
           </div>
 
-          <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm text-left">
-            <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center mb-6">
-              <Clock className="w-6 h-6 text-zinc-900" />
+          <div className="anim-rise" style={{ ['--d' as string]: '420ms' }}>
+            <SlotBoard />
+          </div>
+        </header>
+
+        {/* Sequência real do agendamento — por isso a numeração faz sentido */}
+        <section className="border-t border-white/8 bg-pine/40">
+          <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
+            <Reveal>
+              <p className="type-tag text-brass-bright">Do toque ao corte</p>
+              <h2 className="type-display mt-4 max-w-xl text-[2.4rem] sm:text-[3rem]">
+                Três passos, sem telefone
+              </h2>
+            </Reveal>
+
+            <ol className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/8 sm:grid-cols-3">
+              {STEPS.map((step, index) => (
+                <Reveal as="li" key={step.title} delay={index * 110} className="bg-pine-deep">
+                  <div className="flex h-full flex-col gap-5 p-7 sm:p-8">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="pole h-8 w-2.5"
+                        style={{
+                          ['--pole-a' as string]: '#e6bc68',
+                          ['--pole-b' as string]: '#14392e',
+                        }}
+                        aria-hidden="true"
+                      >
+                        <span className="pole-stripes pole-stripes-still absolute inset-0" />
+                      </span>
+                      <span className="type-num text-3xl text-white/25">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <h3 className="type-sign text-xl text-white">{step.title}</h3>
+                    <p className="text-[0.9375rem] leading-relaxed text-white/55">{step.body}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        {/* Quadro da equipe: quem entra por qual porta */}
+        <section className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
+          <Reveal>
+            <p className="type-tag text-brass-bright">Três portas</p>
+            <h2 className="type-display mt-4 max-w-2xl text-[2.4rem] sm:text-[3rem]">
+              Cada um entra na sua sala
+            </h2>
+          </Reveal>
+
+          <dl className="mt-12 border-t border-white/10">
+            {ROLES.map((role, index) => (
+              <Reveal key={role.tag} delay={index * 110}>
+                <div className="group grid items-baseline gap-3 border-b border-white/10 py-8 transition-colors duration-300 hover:bg-white/[0.03] sm:grid-cols-[9rem_1fr] sm:gap-8 sm:px-2">
+                  <dt className="type-tag text-brass-bright">{role.tag}</dt>
+                  <dd>
+                    <p className="type-sign text-2xl text-white transition-transform duration-300 group-hover:translate-x-1">
+                      {role.title}
+                    </p>
+                    <p className="mt-2 max-w-2xl text-[0.9375rem] leading-relaxed text-white/55">
+                      {role.body}
+                    </p>
+                  </dd>
+                </div>
+              </Reveal>
+            ))}
+          </dl>
+        </section>
+
+        {/* Chamada final */}
+        <section className="mx-auto max-w-6xl px-5 pb-24 sm:px-8">
+          <Reveal>
+            <div className="relative overflow-hidden rounded-2xl border border-brass/25 bg-brass/10 px-7 py-12 text-center sm:px-12 sm:py-16">
+              <span
+                className="pole-stripes pole-stripes-still absolute inset-x-0 top-0 h-1"
+                style={{
+                  ['--pole-a' as string]: '#e6bc68',
+                  ['--pole-b' as string]: '#14392e',
+                }}
+                aria-hidden="true"
+              />
+              <h2 className="type-display text-[2.2rem] sm:text-[3rem]">
+                Sua próxima cadeira já está aberta
+              </h2>
+              <p className="mx-auto mt-4 max-w-md text-[0.9375rem] text-white/60">
+                Crie a conta, escolha o profissional e marque o horário em menos de um minuto.
+              </p>
+              <Link to="/register" className="btn btn-brass btn-lg group mt-8">
+                Criar conta
+                <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+              </Link>
             </div>
-            <h3 className="text-xl font-bold text-zinc-900 mb-3">Zero Espera</h3>
-            <p className="text-zinc-500 font-medium">Chegue no horário marcado e seja atendido imediatamente. Valorizamos o seu tempo.</p>
+          </Reveal>
+        </section>
+
+        <footer className="border-t border-white/8">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 py-8 sm:flex-row sm:px-8">
+            <Logo tone="light" />
+            <p className="type-num text-xs text-white/35">© {year} CutFlow</p>
           </div>
-        </div>
-      </main>
-      
-      {/* Footer */}
-      <footer className="border-t border-zinc-200 bg-white py-12">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Scissors className="w-5 h-5 text-zinc-900" />
-            <span className="font-bold text-zinc-900 tracking-tight">CutFlow</span>
-          </div>
-          <p className="text-zinc-500 text-sm font-medium">© {new Date().getFullYear()} CutFlow. Todos os direitos reservados.</p>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
 };

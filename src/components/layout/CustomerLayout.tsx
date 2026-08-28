@@ -1,109 +1,102 @@
-import React from 'react';
+import { Suspense } from 'react';
+import { CalendarCheck, CalendarPlus, LogOut, UserRound } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Scissors, LogOut, Calendar, Plus, User } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { Logo } from '../ui/Logo';
+import { PageTransition, RouteProgress } from './RouteProgress';
+import { RouteSkeleton } from '../ui/Skeleton';
 
+const ITEMS = [
+  { icon: CalendarPlus, label: 'Agendar', path: '/customer', end: true },
+  { icon: CalendarCheck, label: 'Meus horários', path: '/customer/appointments' },
+  { icon: UserRound, label: 'Perfil', path: '/customer/profile' },
+];
+
+/** Salão: barra superior clara, conteúdo centrado, abas no celular. */
 export const CustomerLayout = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
-  return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col">
-      {/* Top Navigation */}
-      <header className="bg-white border-b border-zinc-200 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
-                <Scissors className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow</span>
-            </div>
+  const firstName = profile?.full_name?.split(' ')[0] ?? '';
 
-            {/* Desktop Navigation */}
-            <nav className="hidden sm:flex items-center gap-6 ml-8">
-              <NavLink 
-                to="/customer" 
-                end
-                className={({ isActive }) => 
-                  `text-sm font-medium transition-colors ${isActive ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`
-                }
-              >
-                Agendar
-              </NavLink>
-              <NavLink 
-                to="/customer/appointments" 
-                className={({ isActive }) => 
-                  `text-sm font-medium transition-colors ${isActive ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}`
-                }
-              >
-                Meus Horários
-              </NavLink>
+  return (
+    <div className="flex min-h-screen flex-col">
+      <RouteProgress />
+
+      <header className="sticky top-0 z-30 border-b border-line bg-porcelain/90 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-6 px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-9">
+            <NavLink to="/customer" aria-label="CutFlow, início">
+              <Logo />
+            </NavLink>
+
+            <nav className="hidden items-center gap-7 sm:flex">
+              {ITEMS.slice(0, 2).map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `link-underline text-sm font-medium transition-colors ${
+                      isActive ? 'text-ink' : 'text-smoke hover:text-ink'
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
             </nav>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:block text-right mr-4">
-              <p className="text-sm font-medium text-zinc-900">{profile?.full_name}</p>
-              <p className="text-xs text-zinc-500">Cliente</p>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <span className="mr-1 hidden text-right text-sm text-smoke sm:block">
+              Olá, <span className="font-semibold text-ink">{firstName}</span>
+            </span>
             <NavLink
               to="/customer/profile"
-              className={({ isActive }) => `p-2 rounded-full transition-colors ${isActive ? 'text-zinc-900 bg-zinc-100' : 'text-zinc-400 hover:text-zinc-900 hover:bg-zinc-50'}`}
-              title="Meu Perfil"
+              className={({ isActive }) =>
+                `icon-btn ${isActive ? 'bg-pine-wash text-pine' : ''}`
+              }
+              aria-label="Meu perfil"
             >
-              <User className="w-5 h-5" />
+              <UserRound className="h-5 w-5" />
             </NavLink>
             <button
+              type="button"
               onClick={handleLogout}
-              className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-              title="Sair"
+              className="icon-btn icon-btn-danger"
+              aria-label="Sair da conta"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="h-5 w-5" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        <Outlet />
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-28 sm:px-6 sm:pb-12">
+        <PageTransition>
+          <Suspense fallback={<RouteSkeleton />}>
+            <Outlet />
+          </Suspense>
+        </PageTransition>
       </main>
-      
-      {/* Mobile Bottom Navigation (Optional for future) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 pb-safe z-30">
-        <div className="flex items-center justify-around p-2">
-          <NavLink
-            to="/customer"
-            end
-            className={({ isActive }) =>
-              `flex flex-col items-center p-2 rounded-lg text-xs font-medium w-full ${
-                isActive ? 'text-zinc-900 bg-zinc-50' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
-              }`
-            }
-          >
-            <Plus className="w-6 h-6 mb-1" />
-            Agendar
-          </NavLink>
-          <NavLink
-            to="/customer/appointments"
-            className={({ isActive }) =>
-              `flex flex-col items-center p-2 rounded-lg text-xs font-medium w-full ${
-                isActive ? 'text-zinc-900 bg-zinc-50' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
-              }`
-            }
-          >
-            <Calendar className="w-6 h-6 mb-1" />
-            Horários
-          </NavLink>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-porcelain/95 backdrop-blur-md pb-safe sm:hidden">
+        <div className="flex items-stretch">
+          {ITEMS.map((item) => (
+            <NavLink key={item.path} to={item.path} end={item.end} className="tab-item">
+              <item.icon className="h-5 w-5" strokeWidth={1.9} />
+              <span className="w-full truncate text-center">{item.label}</span>
+            </NavLink>
+          ))}
         </div>
-      </div>
+      </nav>
     </div>
   );
 };

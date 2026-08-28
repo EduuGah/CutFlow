@@ -1,38 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Mail, Phone, ShieldCheck, UserRound } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { User, Phone, Mail, Shield, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Button } from '../../components/ui/Button';
+import { Field, Notice } from '../../components/ui/Field';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { ProfileSkeleton } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
+
+const ROLE_LABEL: Record<string, string> = {
+  ADMIN: 'Administração',
+  BARBER: 'Barbeiro',
+  CUSTOMER: 'Cliente',
+};
+
+/** Máscara de telefone brasileiro: fixo com 10 dígitos, celular com 11. */
+const formatPhone = (value: string) => {
+  let digits = value.replace(/\D/g, '').slice(0, 11);
+
+  if (digits.length <= 10) {
+    digits = digits.replace(/(\d{2})(\d)/, '($1) $2');
+    digits = digits.replace(/(\d{4})(\d)/, '$1-$2');
+  } else {
+    digits = digits.replace(/(\d{2})(\d)/, '($1) $2');
+    digits = digits.replace(/(\d{5})(\d)/, '$1-$2');
+  }
+  return digits;
+};
+
+const initials = (name?: string | null) =>
+  (name ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('') || '—';
 
 export const ProfileSettings = () => {
   const { profile, refreshProfile } = useAuth();
-  
+  const toast = useToast();
+
   const [fullName, setFullName] = useState('');
-
-  const formatPhone = (val: string) => {
-    let v = val.replace(/\D/g, '');
-    if (v.length > 11) v = v.substring(0, 11);
-    
-    if (v.length <= 10) {
-      // Landline: (XX) XXXX-XXXX
-      v = v.replace(/(\d{2})(\d)/, '($1) $2');
-      v = v.replace(/(\d{4})(\d)/, '$1-$2');
-    } else {
-      // Mobile: (XX) XXXXX-XXXX
-      v = v.replace(/(\d{2})(\d)/, '($1) $2');
-      v = v.replace(/(\d{5})(\d)/, '$1-$2');
-    }
-    return v;
-  };
-
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPhone(formatPhone(e.target.value));
-  };
   const [phone, setPhone] = useState('');
-  
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
@@ -42,130 +54,103 @@ export const ProfileSettings = () => {
     }
   }, [profile]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!profile) return;
-    
+
     setIsSaving(true);
-    setMessage(null);
-    
-    const { error } = await supabase
+    setError(null);
+
+    const { error: updateError } = await supabase
       .from('users')
-      .update({
-        full_name: fullName,
-        phone: phone || null
-      })
+      .update({ full_name: fullName, phone: phone || null })
       .eq('id', profile.id);
-      
-    if (error) {
-      console.error('Update profile error:', error);
-      setMessage({ type: 'error', text: 'Erro ao atualizar o perfil: ' + error.message });
-    } else {
-      setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
-      await refreshProfile();
-      // Clear success message after 3s
-      setTimeout(() => setMessage(null), 3000);
-    }
-    
+
     setIsSaving(false);
+
+    if (updateError) {
+      console.error(updateError);
+      setError(`As alterações não foram salvas: ${updateError.message}`);
+      return;
+    }
+
+    toast.success('Perfil atualizado.');
+    await refreshProfile();
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center p-12">
-        <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-      </div>
-    );
-  }
+  if (isLoading) return <ProfileSkeleton />;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-20">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Meu Perfil</h1>
-        <p className="text-zinc-500 mt-1">Gerencie suas informações pessoais e de contato.</p>
-      </div>
-      
-      {message && (
-        <div className={`p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 ${
-          message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-        }`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />}
-          <p className="font-medium text-sm">{message.text}</p>
-        </div>
-      )}
+    <div className="mx-auto max-w-2xl space-y-8">
+      <PageHeader
+        eyebrow="Perfil"
+        title="Suas informações"
+        description="É por aqui que a barbearia identifica e entra em contato com você."
+      />
 
-      <div className="bg-white border border-zinc-200 rounded-3xl p-6 sm:p-8 shadow-sm">
-        <div className="flex items-center gap-4 mb-8 pb-8 border-b border-zinc-100">
-          <div className="w-20 h-20 bg-zinc-100 rounded-full flex items-center justify-center border-4 border-white shadow-sm">
-            <User className="w-8 h-8 text-zinc-400" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-zinc-900">{profile?.full_name}</h3>
-            <div className="flex items-center gap-1.5 mt-1 text-sm text-zinc-500 font-medium">
-              <Shield className="w-4 h-4" />
-              <span>{profile?.role === 'ADMIN' ? 'Administrador' : profile?.role === 'BARBER' ? 'Barbeiro' : 'Cliente'}</span>
-            </div>
+      <div className="card p-6 sm:p-8">
+        <div className="flex items-center gap-4 border-b border-line-soft pb-7">
+          <span className="anim-pop flex h-16 w-16 flex-none items-center justify-center rounded-2xl bg-pine text-xl font-bold text-white">
+            {initials(profile?.full_name)}
+          </span>
+          <div className="min-w-0">
+            <h2 className="type-sign truncate text-xl text-ink">{profile?.full_name}</h2>
+            <p className="type-tag mt-2 inline-flex items-center gap-1.5 text-brass-deep">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {ROLE_LABEL[profile?.role ?? ''] ?? 'Conta'}
+            </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-zinc-700 mb-1.5">Email</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Mail className="w-5 h-5 text-zinc-400" />
-              </div>
-              <input
-                type="email"
-                disabled
-                value={profile?.email || ''}
-                className="w-full pl-11 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl text-sm font-medium text-zinc-500 focus:outline-none cursor-not-allowed opacity-70"
-              />
-            </div>
-            <p className="text-xs text-zinc-500 mt-2 font-medium">O email de acesso não pode ser alterado por aqui.</p>
-          </div>
+        <form onSubmit={handleSubmit} className="space-y-5 pt-7">
+          {error && <Notice tone="error">{error}</Notice>}
 
-          <div>
-            <label htmlFor="full_name" className="block text-sm font-semibold text-zinc-700 mb-1.5">Nome Completo</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <User className="w-5 h-5 text-zinc-400" />
-              </div>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-white border border-zinc-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-shadow"
-              />
-            </div>
-          </div>
+          <Field
+            label="E-mail"
+            htmlFor="profile-email"
+            icon={Mail}
+            hint="O e-mail de acesso é alterado direto no Supabase."
+          >
+            <input
+              id="profile-email"
+              type="email"
+              disabled
+              value={profile?.email || ''}
+              className="input input-icon"
+            />
+          </Field>
 
-          <div>
-            <label htmlFor="phone" className="block text-sm font-semibold text-zinc-700 mb-1.5">Telefone / WhatsApp</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Phone className="w-5 h-5 text-zinc-400" />
-              </div>
-              <input
-                type="tel"
-                placeholder="(00) 00000-0000"
-                value={phone}
-                onChange={handlePhoneChange}
-                className="w-full pl-11 pr-4 py-3 bg-white border border-zinc-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-shadow"
-              />
-            </div>
-          </div>
+          <Field label="Nome completo" htmlFor="profile-name" icon={UserRound}>
+            <input
+              id="profile-name"
+              type="text"
+              required
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              className="input input-icon"
+            />
+          </Field>
 
-          <div className="pt-6">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="w-full sm:w-auto px-8 py-3 bg-zinc-900 text-white font-semibold rounded-2xl hover:bg-zinc-800 hover:-translate-y-0.5 transition-all shadow-md shadow-zinc-900/10 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
-            >
-              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isSaving ? 'Salvando...' : 'Salvar Alterações'}
-            </button>
+          <Field
+            label="Telefone / WhatsApp"
+            htmlFor="profile-phone"
+            icon={Phone}
+            hint="Aparece para o barbeiro na agenda do dia."
+          >
+            <input
+              id="profile-phone"
+              type="tel"
+              placeholder="(00) 00000-0000"
+              value={phone}
+              onChange={(event) => setPhone(formatPhone(event.target.value))}
+              className="input input-icon"
+            />
+          </Field>
+
+          <div className="pt-3">
+            <Button type="submit" size="lg" loading={isSaving} loadingLabel="Salvando">
+              Salvar alterações
+            </Button>
           </div>
         </form>
       </div>

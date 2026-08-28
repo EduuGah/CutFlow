@@ -25,17 +25,17 @@ describe('ProtectedRoute', () => {
     );
   };
 
-  it('renders loading spinner when loading', () => {
+  it('renders the boot screen while the session is being checked', () => {
     vi.mocked(AuthContext.useAuth).mockReturnValue({
       user: null,
       profile: null,
       isLoading: true,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
-    const { container } = renderRoute();
-    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    renderRoute();
+    expect(screen.getByTestId('app-loading')).toBeInTheDocument();
   });
 
   it('redirects to login when no user is present', () => {
@@ -43,8 +43,8 @@ describe('ProtectedRoute', () => {
       user: null,
       profile: null,
       isLoading: false,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
     renderRoute();
@@ -56,8 +56,8 @@ describe('ProtectedRoute', () => {
       user: { id: '123' } as any,
       profile: { role: 'ADMIN' } as any,
       isLoading: false,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
     renderRoute(['ADMIN']);
@@ -69,8 +69,8 @@ describe('ProtectedRoute', () => {
       user: { id: '123' } as any,
       profile: { role: 'CUSTOMER' } as any,
       isLoading: false,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
     renderRoute(['ADMIN']);
@@ -82,8 +82,8 @@ describe('ProtectedRoute', () => {
       user: { id: '123' } as any,
       profile: { role: 'BARBER' } as any,
       isLoading: false,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
     renderRoute(['ADMIN']);

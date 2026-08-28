@@ -1,189 +1,200 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, Loader2, Shield } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lock, Mail, UserRound } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { UserRole } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { AuthShell } from '../../components/layout/AuthShell';
+import { Button } from '../../components/ui/Button';
+import { Field, Notice } from '../../components/ui/Field';
+
+const HOME_BY_ROLE = { ADMIN: '/admin', BARBER: '/barber', CUSTOMER: '/customer' } as const;
+
+const ROLES: { value: UserRole; label: string; hint: string }[] = [
+  { value: 'CUSTOMER', label: 'Cliente', hint: 'Marca e acompanha os próprios horários' },
+  { value: 'BARBER', label: 'Barbeiro', hint: 'Comanda a agenda do dia e as ausências' },
+  { value: 'ADMIN', label: 'Dono', hint: 'Gerencia equipe, serviços e a casa inteira' },
+];
 
 export const Register = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('CUSTOMER');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+  const [pending, setPending] = useState<string | null>(null);
+
   const navigate = useNavigate();
   const { user, profile, isLoading: authLoading } = useAuth();
 
-  // Redireciona o usuário caso ele já esteja logado e o perfil carregado
   useEffect(() => {
     if (profile) {
-      if (profile.role === 'ADMIN') navigate('/admin', { replace: true });
-      else if (profile.role === 'BARBER') navigate('/barber', { replace: true });
-      else navigate('/customer', { replace: true });
+      navigate(HOME_BY_ROLE[profile.role] ?? '/customer', { replace: true });
     } else if (user && !authLoading) {
-      setError("Conta criada, mas perfil não encontrado. Você rodou o script SQL com a Trigger no painel do Supabase?");
-      setIsLoading(false);
+      setError(
+        'A conta foi criada, mas o perfil não apareceu no banco. Rode o script SQL com a trigger no painel do Supabase.'
+      );
+      setIsSubmitting(false);
     }
   }, [profile, user, authLoading, navigate]);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSubmitting(true);
     setError(null);
+    setPending(null);
 
-    // No Supabase, passamos os metadados (nome e role) no signUp.
-    // O nosso Trigger no banco de dados (handle_new_user) vai pegar esses dados 
-    // e inserir automaticamente na tabela public.users.
+    // Nome e perfil vão nos metadados; a trigger handle_new_user copia
+    // esses campos para public.users.
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          full_name: name,
-          role: role,
-        },
-      },
+      options: { data: { full_name: name, role } },
     });
 
     if (signUpError) {
       setError(signUpError.message);
-      setIsLoading(false);
-    } else {
-      if (!data.session) {
-        setError('Cadastro realizado! O Supabase exige confirmação. Verifique seu e-mail ou desative a "Confirm email" no painel do Supabase (Authentication > Providers > Email).');
-        setIsLoading(false);
-      }
-      // Se tiver sessão, o useEffect acima fará o redirecionamento automaticamente.
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!data.session) {
+      setPending(
+        'Conta criada. O Supabase está pedindo confirmação por e-mail — abra a mensagem que chegou ou desligue "Confirm email" em Authentication › Providers › Email.'
+      );
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-zinc-200">
-        <div className="flex flex-col items-center mb-8">
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Criar Conta</h1>
-          <p className="text-zinc-500 mt-2 text-sm text-center">
-            Cadastre-se para testar o sistema
-          </p>
-        </div>
+    <AuthShell
+      eyebrow="Criar conta"
+      title="Comece pela cadeira"
+      description="Poucos campos e você já entra direto na agenda."
+      asideTitle="Uma conta, três salas."
+      asideBody="Escolha como você entra: cliente que marca, barbeiro que atende ou dono que acompanha a casa."
+      footer={
+        <p>
+          Já tem uma conta?{' '}
+          <Link to="/login" className="link-underline font-semibold text-pine">
+            Fazer login
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleRegister} className="space-y-5" noValidate>
+        {error && <Notice tone="error">{error}</Notice>}
+        {pending && <Notice tone="info">{pending}</Notice>}
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center">
-            {error}
+        <Field label="Nome completo" htmlFor="name" icon={UserRound}>
+          <input
+            id="name"
+            type="text"
+            required
+            autoComplete="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="input input-icon"
+            placeholder="Como quer ser chamado"
+            disabled={isSubmitting}
+          />
+        </Field>
+
+        <Field label="E-mail" htmlFor="email" icon={Mail}>
+          <input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="input input-icon"
+            placeholder="voce@email.com"
+            disabled={isSubmitting}
+          />
+        </Field>
+
+        <Field
+          label="Senha"
+          htmlFor="password"
+          icon={Lock}
+          hint="Mínimo de 6 caracteres."
+        >
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={6}
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="input input-icon"
+            placeholder="••••••••"
+            disabled={isSubmitting}
+          />
+        </Field>
+
+        <fieldset disabled={isSubmitting}>
+          <legend className="label">Como você entra</legend>
+          <div className="grid gap-2">
+            {ROLES.map((option) => {
+              const isSelected = role === option.value;
+              return (
+                <label
+                  key={option.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-all duration-200 ${
+                    isSelected
+                      ? 'border-pine bg-pine-wash shadow-card'
+                      : 'border-line bg-porcelain hover:border-ash'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="role"
+                    value={option.value}
+                    checked={isSelected}
+                    onChange={() => setRole(option.value)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full border-2 transition-colors ${
+                      isSelected ? 'border-pine' : 'border-line'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full bg-pine transition-transform duration-200 ${
+                        isSelected ? 'scale-100' : 'scale-0'
+                      }`}
+                    />
+                  </span>
+                  <span className="min-w-0">
+                    <span
+                      className={`block text-sm font-semibold ${isSelected ? 'text-pine' : 'text-graphite'}`}
+                    >
+                      {option.label}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-smoke">{option.hint}</span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
-        )}
+        </fieldset>
 
-        <form onSubmit={handleRegister} className="space-y-4">
-          <div className="space-y-1.5">
-            <label htmlFor="name" className="text-sm font-medium text-zinc-700">
-              Nome Completo
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-zinc-400" />
-              </div>
-              <input
-                id="name"
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all placeholder:text-zinc-400"
-                placeholder="Seu nome"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="text-sm font-medium text-zinc-700">
-              E-mail
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-zinc-400" />
-              </div>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all placeholder:text-zinc-400"
-                placeholder="seu@email.com"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="text-sm font-medium text-zinc-700">
-              Senha (mínimo 6 caracteres)
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-zinc-400" />
-              </div>
-              <input
-                id="password"
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all placeholder:text-zinc-400"
-                placeholder="••••••••"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="role" className="text-sm font-medium text-zinc-700">
-              Perfil de Teste
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Shield className="h-5 w-5 text-zinc-400" />
-              </div>
-              <select
-                id="role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as UserRole)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all appearance-none"
-                disabled={isLoading}
-              >
-                <option value="CUSTOMER">Cliente (Customer)</option>
-                <option value="BARBER">Barbeiro (Barber)</option>
-                <option value="ADMIN">Administrador (Admin)</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading || !email || !password || !name}
-            className="w-full flex items-center justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-6"
-          >
-            {isLoading ? (
-              <Loader2 className="animate-spin h-5 w-5" />
-            ) : (
-              'Cadastrar'
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-zinc-600">
-            Já tem uma conta?{' '}
-            <Link to="/login" className="font-medium text-zinc-900 hover:underline">
-              Fazer login
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+        <Button
+          type="submit"
+          block
+          size="lg"
+          loading={isSubmitting}
+          loadingLabel="Criando conta"
+          disabled={!name || !email || !password}
+          className="mt-2"
+        >
+          Criar conta
+        </Button>
+      </form>
+    </AuthShell>
   );
 };

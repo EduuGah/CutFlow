@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Plus, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CalendarOff, Clock, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '../../config/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Notice } from '../../components/ui/Field';
+import { Modal } from '../../components/ui/Modal';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
 
 interface TimeOff {
   id: string;
@@ -12,227 +19,288 @@ interface TimeOff {
   reason: string;
 }
 
+const emptyForm = { date: '', startTime: '', endTime: '', reason: '' };
+
 export const BarberTimeOffs = () => {
   const { profile } = useAuth();
+  const toast = useToast();
+
   const [timeOffs, setTimeOffs] = useState<TimeOff[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [date, setDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+
+  const [removing, setRemoving] = useState<TimeOff | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const fetchTimeOffs = async () => {
     if (!profile) return;
     setIsLoading(true);
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from('time_offs')
       .select('*')
       .eq('barber_id', profile.id)
       .gte('end_datetime', new Date().toISOString())
       .order('start_datetime', { ascending: true });
 
-    if (data) {
-      setTimeOffs(data as TimeOff[]);
+    if (error) {
+      console.error(error);
+      toast.error('Não deu para carregar seus bloqueios.');
+    } else {
+      setTimeOffs((data as TimeOff[]) ?? []);
     }
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchTimeOffs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile || !date || !startTime || !endTime) return;
+  const openForm = () => {
+    setForm(emptyForm);
+    setFormError(null);
+    setIsFormOpen(true);
+  };
 
-    setError(null);
-    setIsSubmitting(true);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profile) return;
 
-    const start = new Date(`${date}T${startTime}`);
-    const end = new Date(`${date}T${endTime}`);
+    const start = new Date(`${form.date}T${form.startTime}`);
+    const end = new Date(`${form.date}T${form.endTime}`);
 
     if (end <= start) {
-      setError('O horário final deve ser depois do inicial.');
-      setIsSubmitting(false);
+      setFormError('O término precisa ser depois do início.');
       return;
     }
 
-    const { error: insertError } = await supabase
-      .from('time_offs')
-      .insert({
-        barber_id: profile.id,
-        start_datetime: start.toISOString(),
-        end_datetime: end.toISOString(),
-        reason: reason || 'Bloqueio de agenda'
-      });
+    setFormError(null);
+    setIsSubmitting(true);
 
-    if (insertError) {
-      setError('Erro ao salvar bloqueio. Tente novamente.');
-    } else {
-      setIsModalOpen(false);
-      setDate('');
-      setStartTime('');
-      setEndTime('');
-      setReason('');
-      fetchTimeOffs();
-    }
+    const { error } = await supabase.from('time_offs').insert({
+      barber_id: profile.id,
+      start_datetime: start.toISOString(),
+      end_datetime: end.toISOString(),
+      reason: form.reason || 'Bloqueio de agenda',
+    });
+
     setIsSubmitting(false);
-  };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente remover este bloqueio?')) return;
-    
-    await supabase.from('time_offs').delete().eq('id', id);
+    if (error) {
+      console.error(error);
+      setFormError('O bloqueio não foi salvo. Tente de novo.');
+      return;
+    }
+
+    setIsFormOpen(false);
+    toast.success('Bloqueio criado.');
     fetchTimeOffs();
   };
 
+  const handleRemove = async () => {
+    if (!removing) return;
+    setIsRemoving(true);
+
+    const { error } = await supabase.from('time_offs').delete().eq('id', removing.id);
+    setIsRemoving(false);
+    setRemoving(null);
+
+    if (error) {
+      console.error(error);
+      toast.error('O bloqueio não foi removido.');
+      return;
+    }
+
+    toast.success('Bloqueio removido.');
+    fetchTimeOffs();
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-20">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Ausências e Bloqueios</h1>
-          <p className="text-zinc-500 mt-1">Gerencie seus horários indisponíveis na agenda.</p>
-        </div>
-        
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Bloqueio
-        </button>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <PageHeader
+        eyebrow="Ausências"
+        title="Bloqueios de agenda"
+        description="Horários em que você não atende. Eles somem da lista dos clientes na hora."
+        actions={
+          <Button onClick={openForm}>
+            <Plus className="h-4 w-4" />
+            Novo bloqueio
+          </Button>
+        }
+      />
 
       {isLoading ? (
-        <div className="flex justify-center p-12">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+        <div className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="card space-y-3 p-5">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-6 w-24" rounded="rounded-md" />
+            </div>
+          ))}
         </div>
       ) : timeOffs.length === 0 ? (
-        <div className="text-center py-16 bg-white border border-zinc-200 rounded-3xl">
-          <Calendar className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-zinc-900">Nenhum bloqueio futuro</h3>
-          <p className="text-zinc-500 mt-1">Sua agenda está totalmente liberada.</p>
-        </div>
+        <EmptyState
+          icon={CalendarOff}
+          title="Nenhum bloqueio à frente"
+          description="Sua agenda está toda liberada. Crie um bloqueio quando precisar fechar um período."
+          action={
+            <Button onClick={openForm}>
+              <Plus className="h-4 w-4" />
+              Novo bloqueio
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {timeOffs.map((timeOff) => {
-            const startDate = parseISO(timeOff.start_datetime);
-            const endDate = parseISO(timeOff.end_datetime);
-            
+        <ul className="grid gap-4 md:grid-cols-2">
+          {timeOffs.map((timeOff, index) => {
+            const start = parseISO(timeOff.start_datetime);
+            const end = parseISO(timeOff.end_datetime);
+
             return (
-              <div key={timeOff.id} className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-900 capitalize">
-                    {format(startDate, 'EEEE, d \'de\' MMMM', { locale: ptBR })}
+              <li
+                key={timeOff.id}
+                className="card card-interactive anim-rise-sm flex items-start justify-between gap-4 p-5"
+                style={{ ['--d' as string]: `${index * 70}ms` }}
+              >
+                <div className="min-w-0">
+                  <p className="text-[0.9375rem] font-semibold text-ink capitalize">
+                    {format(start, "EEEE, d 'de' MMMM", { locale: ptBR })}
                   </p>
-                  <div className="flex items-center gap-2 mt-1.5 text-zinc-600 text-sm font-medium">
-                    <Clock className="w-4 h-4" />
-                    <span>{format(startDate, 'HH:mm')} às {format(endDate, 'HH:mm')}</span>
-                  </div>
-                  {timeOff.reason && (
-                    <div className="mt-3 inline-block px-3 py-1 bg-zinc-100 text-zinc-700 text-xs font-semibold rounded-lg">
-                      {timeOff.reason}
-                    </div>
-                  )}
+                  <p className="type-num mt-1.5 flex items-center gap-2 text-sm text-smoke">
+                    <Clock className="h-3.5 w-3.5" />
+                    {format(start, 'HH:mm')} — {format(end, 'HH:mm')}
+                  </p>
+                  {timeOff.reason && <span className="pill pill-neutral mt-3">{timeOff.reason}</span>}
                 </div>
-                
+
                 <button
-                  onClick={() => handleDelete(timeOff.id)}
-                  className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Remover Bloqueio"
+                  type="button"
+                  onClick={() => setRemoving(timeOff)}
+                  className="icon-btn icon-btn-danger flex-none"
+                  aria-label={`Remover bloqueio de ${format(start, "d 'de' MMMM", { locale: ptBR })}`}
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
 
-      {/* Modal Novo Bloqueio */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-          
-          <div className="bg-white rounded-3xl w-full max-w-md relative z-10 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-zinc-100">
-              <h3 className="text-lg font-bold text-zinc-900">Bloquear Horário</h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 -mr-2 text-zinc-400 hover:text-zinc-600 rounded-full hover:bg-zinc-100 transition-colors">
-                <Plus className="w-5 h-5 rotate-45" />
-              </button>
+      {/* Novo bloqueio */}
+      <Modal
+        open={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title="Bloquear horário"
+        description="Escolha o período em que você não vai atender."
+      >
+        <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          {formError && <Notice tone="error">{formError}</Notice>}
+
+          <div>
+            <label className="label" htmlFor="timeoff-date">
+              Data
+            </label>
+            <input
+              id="timeoff-date"
+              type="date"
+              required
+              min={today}
+              value={form.date}
+              onChange={(event) => setForm({ ...form, date: event.target.value })}
+              className="input"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label" htmlFor="timeoff-start">
+                Início
+              </label>
+              <input
+                id="timeoff-start"
+                type="time"
+                required
+                value={form.startTime}
+                onChange={(event) => setForm({ ...form, startTime: event.target.value })}
+                className="input"
+              />
             </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <p>{error}</p>
-                </div>
-              )}
+            <div>
+              <label className="label" htmlFor="timeoff-end">
+                Término
+              </label>
+              <input
+                id="timeoff-end"
+                type="time"
+                required
+                value={form.endTime}
+                onChange={(event) => setForm({ ...form, endTime: event.target.value })}
+                className="input"
+              />
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1">Data</label>
-                <input
-                  type="date"
-                  required
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                />
-              </div>
+          <div>
+            <label className="label" htmlFor="timeoff-reason">
+              Motivo (opcional)
+            </label>
+            <input
+              id="timeoff-reason"
+              type="text"
+              placeholder="Almoço, médico, curso…"
+              value={form.reason}
+              onChange={(event) => setForm({ ...form, reason: event.target.value })}
+              className="input"
+            />
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-1">Início</label>
-                  <input
-                    type="time"
-                    required
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-1">Término</label>
-                  <input
-                    type="time"
-                    required
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                  />
-                </div>
-              </div>
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" block onClick={() => setIsFormOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" block loading={isSubmitting} loadingLabel="Salvando">
+              Salvar bloqueio
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1">Motivo (Opcional)</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Almoço, Médico..."
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full px-4 py-3 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Bloqueio'}
-                </button>
-              </div>
-            </form>
+      {/* Remoção */}
+      <Modal
+        open={Boolean(removing)}
+        onClose={() => setRemoving(null)}
+        title="Remover bloqueio"
+        description="O período volta a ficar disponível para os clientes."
+      >
+        <div className="space-y-5 p-6">
+          {removing && (
+            <p className="rounded-xl bg-chalk px-4 py-3.5 text-sm text-graphite">
+              <span className="capitalize">
+                {format(parseISO(removing.start_datetime), "EEEE, d 'de' MMMM", { locale: ptBR })}
+              </span>
+              , das {format(parseISO(removing.start_datetime), 'HH:mm')} às{' '}
+              {format(parseISO(removing.end_datetime), 'HH:mm')}.
+            </p>
+          )}
+          <div className="flex gap-3">
+            <Button variant="outline" block onClick={() => setRemoving(null)}>
+              Manter bloqueio
+            </Button>
+            <Button variant="danger" block loading={isRemoving} onClick={handleRemove}>
+              Remover
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Plus, Trash2, Loader2, User } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CalendarOff, Clock, Plus, Trash2 } from 'lucide-react';
+import { supabase } from '../../config/supabase';
 import { UserProfile } from '../../types';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Notice } from '../../components/ui/Field';
+import { Modal } from '../../components/ui/Modal';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { TableSkeleton } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
 
 interface TimeOff {
   id: string;
@@ -12,323 +18,365 @@ interface TimeOff {
   start_datetime: string;
   end_datetime: string;
   reason: string;
-  users?: { full_name: string };
+  users?: { full_name: string } | null;
 }
 
+const emptyForm = {
+  barberId: '',
+  date: '',
+  startTime: '',
+  endTime: '',
+  isFullDay: false,
+  reason: '',
+};
+
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
+
 export const AdminTimeOffs = () => {
+  const toast = useToast();
   const [timeOffs, setTimeOffs] = useState<TimeOff[]>([]);
   const [barbers, setBarbers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedBarberId, setSelectedBarberId] = useState<string>(''); // 'all' or specific UUID
-  const [date, setDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [isFullDay, setIsFullDay] = useState(false);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
+
+  const [removing, setRemoving] = useState<TimeOff | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
-    
-    // Fetch barbers for the select
-    const { data: barbersData } = await supabase
-      .from('users')
-      .select('*')
-      .eq('role', 'BARBER')
-      .order('full_name', { ascending: true });
+    const [barbersRes, timeOffsRes] = await Promise.all([
+      supabase.from('users').select('*').eq('role', 'BARBER').order('full_name'),
+      supabase
+        .from('time_offs')
+        .select('*, users(full_name)')
+        .gte('end_datetime', new Date().toISOString())
+        .order('start_datetime', { ascending: true }),
+    ]);
 
-    if (barbersData) {
-      setBarbers(barbersData as UserProfile[]);
+    if (barbersRes.data) setBarbers(barbersRes.data as UserProfile[]);
+    if (timeOffsRes.error) {
+      console.error(timeOffsRes.error);
+      toast.error('Não deu para carregar os bloqueios.');
+    } else {
+      setTimeOffs((timeOffsRes.data as TimeOff[]) ?? []);
     }
-
-    // Fetch future time_offs
-    const { data: timeOffsData } = await supabase
-      .from('time_offs')
-      .select('*, users(full_name)')
-      .gte('end_datetime', new Date().toISOString())
-      .order('start_datetime', { ascending: true });
-
-    if (timeOffsData) {
-      setTimeOffs(timeOffsData as TimeOff[]);
-    }
-    
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedBarberId || !date) return;
-    
-    if (!isFullDay && (!startTime || !endTime)) {
-      setError('Informe o horário de início e fim, ou marque "Dia inteiro".');
+  const openForm = () => {
+    setForm(emptyForm);
+    setFormError(null);
+    setIsFormOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!form.barberId || !form.date) return;
+    if (!form.isFullDay && (!form.startTime || !form.endTime)) {
+      setFormError('Informe início e término, ou marque "dia inteiro".');
       return;
     }
 
-    setError(null);
-    setIsSubmitting(true);
-
-    const start = new Date(`${date}T${isFullDay ? '00:00' : startTime}`);
-    const end = new Date(`${date}T${isFullDay ? '23:59' : endTime}`);
+    const start = new Date(`${form.date}T${form.isFullDay ? '00:00' : form.startTime}`);
+    const end = new Date(`${form.date}T${form.isFullDay ? '23:59' : form.endTime}`);
 
     if (end <= start) {
-      setError('O horário final deve ser depois do inicial.');
-      setIsSubmitting(false);
+      setFormError('O término precisa ser depois do início.');
       return;
     }
 
-    // Prepara os dados para inserir. Pode ser um único ou todos.
-    const barberIdsToBlock = selectedBarberId === 'all' 
-      ? barbers.map(b => b.id) 
-      : [selectedBarberId];
+    setFormError(null);
+    setIsSubmitting(true);
 
-    const inserts = barberIdsToBlock.map(id => ({
-      barber_id: id,
+    const targets = form.barberId === 'all' ? barbers.map((barber) => barber.id) : [form.barberId];
+    const rows = targets.map((barberId) => ({
+      barber_id: barberId,
       start_datetime: start.toISOString(),
       end_datetime: end.toISOString(),
-      reason: reason || 'Bloqueio administrativo'
+      reason: form.reason || 'Bloqueio administrativo',
     }));
 
-    const { error: insertError } = await supabase
-      .from('time_offs')
-      .insert(inserts);
-
-    if (insertError) {
-      // Possible RLS error if admin policies are missing
-      setError('Erro ao salvar bloqueio. Verifique se o script SQL foi executado.');
-      console.error(insertError);
-    } else {
-      setIsModalOpen(false);
-      resetForm();
-      fetchData();
-    }
+    const { error } = await supabase.from('time_offs').insert(rows);
     setIsSubmitting(false);
-  };
 
-  const resetForm = () => {
-    setSelectedBarberId('');
-    setDate('');
-    setStartTime('');
-    setEndTime('');
-    setIsFullDay(false);
-    setReason('');
-    setError(null);
-  };
+    if (error) {
+      console.error(error);
+      setFormError(
+        'O bloqueio não foi salvo. Confirme se as políticas de acesso da tabela time_offs estão configuradas.'
+      );
+      return;
+    }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente remover este bloqueio?')) return;
-    
-    await supabase.from('time_offs').delete().eq('id', id);
+    setIsFormOpen(false);
+    toast.success(
+      rows.length > 1 ? `Bloqueio criado para ${rows.length} profissionais.` : 'Bloqueio criado.'
+    );
     fetchData();
   };
 
+  const handleRemove = async () => {
+    if (!removing) return;
+    setIsRemoving(true);
+
+    const { error } = await supabase.from('time_offs').delete().eq('id', removing.id);
+    setIsRemoving(false);
+    setRemoving(null);
+
+    if (error) {
+      console.error(error);
+      toast.error('O bloqueio não foi removido.');
+      return;
+    }
+
+    toast.success('Bloqueio removido.');
+    fetchData();
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-20">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Bloqueios e Folgas</h1>
-          <p className="text-zinc-500 mt-1">Gerencie ausências de barbeiros e fechamentos gerais.</p>
-        </div>
-        
-        <button
-          onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="px-4 py-2 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 transition-colors flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Bloqueio
-        </button>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <PageHeader
+        eyebrow="Bloqueios"
+        title="Folgas e fechamentos"
+        description="Feriados, férias e ausências. O período sai da agenda dos clientes na hora."
+        actions={
+          <Button onClick={openForm}>
+            <Plus className="h-4 w-4" />
+            Novo bloqueio
+          </Button>
+        }
+      />
 
       {isLoading ? (
-        <div className="flex justify-center p-12">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-        </div>
+        <TableSkeleton rows={4} />
       ) : timeOffs.length === 0 ? (
-        <div className="text-center py-16 bg-white border border-zinc-200 rounded-3xl">
-          <Calendar className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-zinc-900">Nenhum bloqueio registrado</h3>
-          <p className="text-zinc-500 mt-1">A agenda de todos os barbeiros está liberada.</p>
-        </div>
+        <EmptyState
+          icon={CalendarOff}
+          title="Nenhum bloqueio à frente"
+          description="A agenda de toda a equipe está liberada. Crie um bloqueio para fechar um período."
+          action={
+            <Button onClick={openForm}>
+              <Plus className="h-4 w-4" />
+              Novo bloqueio
+            </Button>
+          }
+        />
       ) : (
-        <div className="bg-white border border-zinc-200 rounded-3xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-zinc-50 border-b border-zinc-200">
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Profissional</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Período</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Motivo</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200">
-                {timeOffs.map((timeOff) => {
-                  const start = parseISO(timeOff.start_datetime);
-                  const end = parseISO(timeOff.end_datetime);
-                  return (
-                    <tr key={timeOff.id} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                            <User className="w-4 h-4 text-zinc-500" />
-                          </div>
-                          <span className="text-sm font-medium text-zinc-900">
-                            {timeOff.users?.full_name || 'Desconhecido'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm text-zinc-900">
-                          <Calendar className="w-4 h-4 text-zinc-400" />
-                          <span className="font-medium">{format(start, "dd 'de' MMM", { locale: ptBR })}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
-                          <Clock className="w-4 h-4" />
-                          <span>{format(start, 'HH:mm')} - {format(end, 'HH:mm')}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm text-zinc-600">{timeOff.reason}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleDelete(timeOff.id)}
-                          className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex"
-                          title="Remover bloqueio"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div className="card overflow-hidden">
+          <div className="hidden border-b border-line bg-chalk/60 px-5 py-3 sm:grid sm:grid-cols-[1fr_12rem_1fr_3rem] sm:gap-4">
+            {['Profissional', 'Período', 'Motivo', ''].map((heading, index) => (
+              <span key={index} className="type-tag text-ash">
+                {heading}
+              </span>
+            ))}
           </div>
-        </div>
-      )}
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-zinc-100">
-              <h2 className="text-xl font-bold text-zinc-900">Novo Bloqueio</h2>
-              <p className="text-sm text-zinc-500 mt-1">Defina quando não haverá atendimento</p>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1">
-              {error && (
-                <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
-                  {error}
-                </div>
-              )}
+          <ul className="divide-y divide-line-soft">
+            {timeOffs.map((timeOff, index) => {
+              const start = parseISO(timeOff.start_datetime);
+              const end = parseISO(timeOff.end_datetime);
+              const name = timeOff.users?.full_name ?? 'Profissional removido';
 
-              <div className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Para quem?</label>
-                  <select
-                    required
-                    value={selectedBarberId}
-                    onChange={(e) => setSelectedBarberId(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-                  >
-                    <option value="" disabled>Selecione...</option>
-                    <option value="all">TODOS os Barbeiros (Fechamento Geral)</option>
-                    {barbers.map(b => (
-                      <option key={b.id} value={b.id}>{b.full_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Data</label>
-                  <input
-                    type="date"
-                    required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="isFullDay"
-                    checked={isFullDay}
-                    onChange={(e) => setIsFullDay(e.target.checked)}
-                    className="w-4 h-4 text-zinc-900 border-zinc-300 rounded focus:ring-zinc-900"
-                  />
-                  <label htmlFor="isFullDay" className="text-sm font-medium text-zinc-700">
-                    Dia inteiro (00:00 às 23:59)
-                  </label>
-                </div>
-
-                {!isFullDay && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-zinc-700">Início</label>
-                      <input
-                        type="time"
-                        required={!isFullDay}
-                        value={startTime}
-                        onChange={(e) => setStartTime(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-zinc-700">Fim</label>
-                      <input
-                        type="time"
-                        required={!isFullDay}
-                        value={endTime}
-                        onChange={(e) => setEndTime(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-                      />
-                    </div>
+              return (
+                <li
+                  key={timeOff.id}
+                  className="anim-rise-sm grid gap-3 px-5 py-4 transition-colors hover:bg-chalk/40 sm:grid-cols-[1fr_12rem_1fr_3rem] sm:items-center sm:gap-4"
+                  style={{ ['--d' as string]: `${index * 45}ms` }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-chalk text-xs font-bold text-smoke">
+                      {initials(name)}
+                    </span>
+                    <span className="truncate text-sm font-medium text-ink">{name}</span>
                   </div>
-                )}
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-zinc-700">Motivo</label>
-                  <input
-                    type="text"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Ex: Feriado, Férias, Manutenção..."
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-                  />
-                </div>
-              </div>
+                  <div>
+                    <p className="text-sm font-medium text-ink capitalize">
+                      {format(start, "d 'de' MMM", { locale: ptBR })}
+                    </p>
+                    <p className="type-num mt-0.5 flex items-center gap-1.5 text-xs text-smoke">
+                      <Clock className="h-3 w-3" />
+                      {format(start, 'HH:mm')} — {format(end, 'HH:mm')}
+                    </p>
+                  </div>
 
-              <div className="mt-8 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 px-4 bg-white border border-zinc-200 text-zinc-700 font-medium rounded-xl hover:bg-zinc-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 py-2.5 px-4 bg-zinc-900 text-white font-medium rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors flex items-center justify-center"
-                >
-                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar'}
-                </button>
-              </div>
-            </form>
-          </div>
+                  <p className="text-sm text-smoke">{timeOff.reason}</p>
+
+                  <button
+                    type="button"
+                    onClick={() => setRemoving(timeOff)}
+                    className="icon-btn icon-btn-danger justify-self-start sm:justify-self-end"
+                    aria-label={`Remover bloqueio de ${name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
+
+      {/* Novo bloqueio */}
+      <Modal
+        open={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title="Novo bloqueio"
+        description="Defina quem fica indisponível e por quanto tempo."
+      >
+        <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          {formError && <Notice tone="error">{formError}</Notice>}
+
+          <div>
+            <label className="label" htmlFor="block-barber">
+              Para quem
+            </label>
+            <select
+              id="block-barber"
+              required
+              value={form.barberId}
+              onChange={(event) => setForm({ ...form, barberId: event.target.value })}
+              className="input"
+            >
+              <option value="" disabled>
+                Selecione um profissional
+              </option>
+              <option value="all">Toda a equipe (fechamento geral)</option>
+              {barbers.map((barber) => (
+                <option key={barber.id} value={barber.id}>
+                  {barber.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label" htmlFor="block-date">
+              Data
+            </label>
+            <input
+              id="block-date"
+              type="date"
+              required
+              min={today}
+              value={form.date}
+              onChange={(event) => setForm({ ...form, date: event.target.value })}
+              className="input"
+            />
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line p-4">
+            <input
+              type="checkbox"
+              checked={form.isFullDay}
+              onChange={(event) => setForm({ ...form, isFullDay: event.target.checked })}
+              className="switch-input sr-only"
+            />
+            <span className="switch-track" aria-hidden="true" />
+            <span className="text-sm font-semibold text-ink">Dia inteiro</span>
+          </label>
+
+          {!form.isFullDay && (
+            <div className="anim-rise-sm grid grid-cols-2 gap-4">
+              <div>
+                <label className="label" htmlFor="block-start">
+                  Início
+                </label>
+                <input
+                  id="block-start"
+                  type="time"
+                  required
+                  value={form.startTime}
+                  onChange={(event) => setForm({ ...form, startTime: event.target.value })}
+                  className="input type-num"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="block-end">
+                  Término
+                </label>
+                <input
+                  id="block-end"
+                  type="time"
+                  required
+                  value={form.endTime}
+                  onChange={(event) => setForm({ ...form, endTime: event.target.value })}
+                  className="input type-num"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="label" htmlFor="block-reason">
+              Motivo (opcional)
+            </label>
+            <input
+              id="block-reason"
+              type="text"
+              placeholder="Feriado, férias, manutenção…"
+              value={form.reason}
+              onChange={(event) => setForm({ ...form, reason: event.target.value })}
+              className="input"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" block onClick={() => setIsFormOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" block loading={isSubmitting} loadingLabel="Salvando">
+              Criar bloqueio
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Remoção */}
+      <Modal
+        open={Boolean(removing)}
+        onClose={() => setRemoving(null)}
+        title="Remover bloqueio"
+        description="O período volta a aceitar agendamentos."
+      >
+        <div className="space-y-5 p-6">
+          {removing && (
+            <p className="rounded-xl bg-chalk px-4 py-3.5 text-sm text-graphite">
+              {removing.users?.full_name ?? 'Profissional'} —{' '}
+              <span className="capitalize">
+                {format(parseISO(removing.start_datetime), "d 'de' MMMM", { locale: ptBR })}
+              </span>
+              , das {format(parseISO(removing.start_datetime), 'HH:mm')} às{' '}
+              {format(parseISO(removing.end_datetime), 'HH:mm')}.
+            </p>
+          )}
+          <div className="flex gap-3">
+            <Button variant="outline" block onClick={() => setRemoving(null)}>
+              Manter bloqueio
+            </Button>
+            <Button variant="danger" block loading={isRemoving} onClick={handleRemove}>
+              Remover
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

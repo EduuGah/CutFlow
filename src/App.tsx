@@ -1,72 +1,99 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { ToastProvider } from './components/ui/Toast';
+import { BootScreen, ProtectedRoute } from './components/layout/ProtectedRoute';
 import { AdminLayout } from './components/layout/AdminLayout';
 import { BarberLayout } from './components/layout/BarberLayout';
 import { CustomerLayout } from './components/layout/CustomerLayout';
 
-import { Landing } from './pages/public/Landing';
-import { Login } from './pages/auth/Login';
-import { Register } from './pages/auth/Register';
-import { CustomerDashboard } from './pages/customer/CustomerDashboard';
-import { CustomerAppointments } from './pages/customer/CustomerAppointments';
-import { BarberDashboard } from './pages/barber/BarberDashboard';
-import { BarberTimeOffs } from './pages/barber/BarberTimeOffs';
-import { AdminDashboard } from './pages/admin/AdminDashboard';
-import { ServicesManagement } from './pages/admin/ServicesManagement';
-import { BarbersManagement } from './pages/admin/BarbersManagement';
-import { AdminSchedule } from './pages/admin/AdminSchedule';
-import { AdminTimeOffs } from './pages/admin/AdminTimeOffs';
-import { ProfileSettings } from './pages/shared/ProfileSettings';
+/**
+ * Cada tela vira um pedaço próprio do bundle. A entrada carrega só o que a
+ * pessoa vê primeiro; o painel do dono, que traz os gráficos, só chega quando
+ * o dono entra.
+ */
+const page = <T extends Record<string, unknown>>(loader: () => Promise<T>, name: keyof T) =>
+  lazy(async () => ({ default: (await loader())[name] as React.ComponentType }));
+
+const Landing = page(() => import('./pages/public/Landing'), 'Landing');
+const Login = page(() => import('./pages/auth/Login'), 'Login');
+const Register = page(() => import('./pages/auth/Register'), 'Register');
+const NotFound = page(() => import('./pages/public/NotFound'), 'NotFound');
+
+const CustomerDashboard = page(
+  () => import('./pages/customer/CustomerDashboard'),
+  'CustomerDashboard'
+);
+const CustomerAppointments = page(
+  () => import('./pages/customer/CustomerAppointments'),
+  'CustomerAppointments'
+);
+
+const BarberDashboard = page(() => import('./pages/barber/BarberDashboard'), 'BarberDashboard');
+const BarberTimeOffs = page(() => import('./pages/barber/BarberTimeOffs'), 'BarberTimeOffs');
+
+const AdminDashboard = page(() => import('./pages/admin/AdminDashboard'), 'AdminDashboard');
+const ServicesManagement = page(
+  () => import('./pages/admin/ServicesManagement'),
+  'ServicesManagement'
+);
+const BarbersManagement = page(
+  () => import('./pages/admin/BarbersManagement'),
+  'BarbersManagement'
+);
+const AdminSchedule = page(() => import('./pages/admin/AdminSchedule'), 'AdminSchedule');
+const AdminTimeOffs = page(() => import('./pages/admin/AdminTimeOffs'), 'AdminTimeOffs');
+const ProfileSettings = page(() => import('./pages/shared/ProfileSettings'), 'ProfileSettings');
 
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Rotas Públicas */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          
-          {/* Rotas Protegidas - Clientes */}
-          <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
-            <Route element={<CustomerLayout />}>
-              <Route path="/customer" element={<CustomerDashboard />} />
-              <Route path="/customer/appointments" element={<CustomerAppointments />} />
-              <Route path="/customer/profile" element={<ProfileSettings />} />
-            </Route>
-          </Route>
+      <ToastProvider>
+        <BrowserRouter>
+          <Suspense fallback={<BootScreen />}>
+            <Routes>
+              {/* Público */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
 
-          {/* Rotas Protegidas - Barbeiros */}
-          <Route element={<ProtectedRoute allowedRoles={['BARBER']} />}>
-            <Route element={<BarberLayout />}>
-              <Route path="/barber" element={<BarberDashboard />} />
-              <Route path="/barber/time-offs" element={<BarberTimeOffs />} />
-              <Route path="/barber/profile" element={<ProfileSettings />} />
-            </Route>
-          </Route>
+              {/* Clientes */}
+              <Route element={<ProtectedRoute allowedRoles={['CUSTOMER']} />}>
+                <Route element={<CustomerLayout />}>
+                  <Route path="/customer" element={<CustomerDashboard />} />
+                  <Route path="/customer/appointments" element={<CustomerAppointments />} />
+                  <Route path="/customer/profile" element={<ProfileSettings />} />
+                </Route>
+              </Route>
 
-          {/* Rotas Protegidas - Admin */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-            <Route element={<AdminLayout />}>
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/services" element={<ServicesManagement />} />
-              <Route path="/admin/barbers" element={<BarbersManagement />} />
-              <Route path="/admin/schedule" element={<AdminSchedule />} />
-              <Route path="/admin/time-offs" element={<AdminTimeOffs />} />
-              <Route path="/admin/profile" element={<ProfileSettings />} />
-            </Route>
-          </Route>
-          
-          {/* Rota 404 de fallback */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </BrowserRouter>
+              {/* Barbeiros */}
+              <Route element={<ProtectedRoute allowedRoles={['BARBER']} />}>
+                <Route element={<BarberLayout />}>
+                  <Route path="/barber" element={<BarberDashboard />} />
+                  <Route path="/barber/time-offs" element={<BarberTimeOffs />} />
+                  <Route path="/barber/profile" element={<ProfileSettings />} />
+                </Route>
+              </Route>
+
+              {/* Administração */}
+              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/admin/schedule" element={<AdminSchedule />} />
+                  <Route path="/admin/barbers" element={<BarbersManagement />} />
+                  <Route path="/admin/services" element={<ServicesManagement />} />
+                  <Route path="/admin/time-offs" element={<AdminTimeOffs />} />
+                  <Route path="/admin/profile" element={<ProfileSettings />} />
+                </Route>
+              </Route>
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }
 
 export default App;
-

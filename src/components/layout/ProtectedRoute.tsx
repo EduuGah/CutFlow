@@ -1,40 +1,40 @@
-import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types';
+import { Pole } from '../ui/Pole';
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
 }
 
+const HOME_BY_ROLE: Record<UserRole, string> = {
+  ADMIN: '/admin',
+  BARBER: '/barber',
+  CUSTOMER: '/customer',
+};
+
+/** Tela de abertura enquanto a sessão é verificada. */
+export const BootScreen = () => (
+  <div
+    data-testid="app-loading"
+    className="flex min-h-screen flex-col items-center justify-center gap-6 bg-pine px-6"
+  >
+    <Pole size="lg" tone="onDark" label="Carregando" />
+    <p className="type-tag anim-fade text-white/45" style={{ ['--d' as string]: '250ms' }}>
+      Abrindo a casa
+    </p>
+  </div>
+);
+
 export const ProtectedRoute = ({ allowedRoles }: ProtectedRouteProps) => {
   const { user, profile, isLoading } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900"></div>
-      </div>
-    );
-  }
+  if (isLoading) return <BootScreen />;
 
-  // Se não estiver logado, redireciona para login
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
 
-  // Se a rota exige roles específicos e o usuário não possui a permissão
   if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
-    // Redireciona para o lugar certo baseado na role
-    switch (profile.role) {
-      case 'ADMIN':
-        return <Navigate to="/admin" replace />;
-      case 'BARBER':
-        return <Navigate to="/barber" replace />;
-      case 'CUSTOMER':
-      default:
-        return <Navigate to="/customer" replace />;
-    }
+    return <Navigate to={HOME_BY_ROLE[profile.role] ?? '/customer'} replace />;
   }
 
   return <Outlet />;

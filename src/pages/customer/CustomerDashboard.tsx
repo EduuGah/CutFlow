@@ -1,587 +1,693 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Scissors,
+  UserRound,
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { UserProfile, Service, BarberSchedule, Appointment } from '../../types';
-import { Calendar as CalendarIcon, Clock, Scissors, User, ChevronRight, ChevronLeft, Loader2, Info, CheckCircle2 } from 'lucide-react';
+import { Appointment, BarberSchedule, Service, UserProfile } from '../../types';
+import { getAvailableTimeSlots } from '../../utils/scheduling';
+import { Button } from '../../components/ui/Button';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { PoleRail } from '../../components/ui/Pole';
+import { BookingSkeleton, Skeleton } from '../../components/ui/Skeleton';
+import { useToast } from '../../components/ui/Toast';
+
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+const brl = (value: number) =>
+  Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
+
+const sameDay = (a: Date, b: Date) =>
+  a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+
+/* ------------------------------------------------------------------ Etapa */
+
+interface StepProps {
+  number: number;
+  title: string;
+  ready: boolean;
+  done: boolean;
+  children: React.ReactNode;
+}
+
+const Step = ({ number, title, ready, done, children }: StepProps) => (
+  <section className="transition-opacity duration-500" style={{ opacity: ready ? 1 : 0.4 }}>
+    <div className="mb-4 flex items-center gap-3">
+      <span className="type-num text-sm text-ash">{String(number).padStart(2, '0')}</span>
+      <h2 className="type-sign text-lg text-ink">{title}</h2>
+      {done && (
+        <CheckCircle2 className="anim-pop h-4 w-4 text-verdigris" strokeWidth={2.5} aria-label="etapa concluída" />
+      )}
+    </div>
+    <fieldset disabled={!ready} className="min-w-0 border-0 p-0">
+      {children}
+    </fieldset>
+  </section>
+);
+
+/* ------------------------------------------------------------------ Página */
+
+interface Confirmation {
+  date: Date;
+  time: string;
+  barber: string;
+  service: string;
+  price: number;
+}
 
 export const CustomerDashboard = () => {
   const { profile } = useAuth();
-  
+  const toast = useToast();
+
   const [barbers, setBarbers] = useState<UserProfile[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [schedules, setSchedules] = useState<BarberSchedule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Selections
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<UserProfile | null>(null);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
-  // Time Slots State
-  const [isTimeSelectionVisible, setIsTimeSelectionVisible] = useState(false);
   const [bookedAppointments, setBookedAppointments] = useState<Appointment[]>([]);
-  const [blockedTimes, setBlockedTimes] = useState<{start: Date, end: Date}[]>([]);
+  const [blockedTimes, setBlockedTimes] = useState<{ start: Date; end: Date }[]>([]);
   const [isCheckingSlots, setIsCheckingSlots] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
 
-  // Toast State
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [showToast, setShowToast] = useState(false);
-
-  // Reset time selection when inputs change
-  useEffect(() => {
-    setIsTimeSelectionVisible(false);
-    setSelectedTime(null);
-  }, [selectedDate, selectedBarber, selectedService]);
-
-  // Calendar State
-  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
+  const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
+  const [monthDirection, setMonthDirection] = useState<1 | -1>(1);
+
+  /* --- Carga inicial ---------------------------------------------------- */
 
   useEffect(() => {
-    // Fetch initial data
-    const fetchData = async () => {
+    const load = async () => {
       setIsLoading(true);
-      
       const [barbersRes, servicesRes, schedulesRes] = await Promise.all([
         supabase.from('users').select('*').eq('role', 'BARBER').order('full_name'),
         supabase.from('services').select('*').eq('is_active', true).order('name'),
-        supabase.from('barber_schedules').select('*')
+        supabase.from('barber_schedules').select('*'),
       ]);
 
       if (barbersRes.data) setBarbers(barbersRes.data as UserProfile[]);
       if (servicesRes.data) setServices(servicesRes.data as Service[]);
       if (schedulesRes.data) setSchedules(schedulesRes.data as BarberSchedule[]);
-      
       setIsLoading(false);
     };
 
-    fetchData();
+    load();
   }, []);
 
-  // When date changes, check if selected barber is still available
+  /* --- Dias em que a casa abre ------------------------------------------ */
+
+  const openWeekdays = useMemo(
+    () => new Set(schedules.map((schedule) => schedule.day_of_week)),
+    [schedules]
+  );
+
+  const availableBarbers = useMemo(() => {
+    if (!selectedDate) return barbers;
+    const weekday = selectedDate.getDay();
+    return barbers.filter((barber) =>
+      schedules.some((s) => s.barber_id === barber.id && s.day_of_week === weekday)
+    );
+  }, [barbers, schedules, selectedDate]);
+
+  // Trocar a data pode tirar o profissional escolhido do expediente.
   useEffect(() => {
-    if (selectedDate && selectedBarber) {
-      const dayOfWeek = selectedDate.getDay();
-      const hasSchedule = schedules.some(
-        s => s.barber_id === selectedBarber.id && s.day_of_week === dayOfWeek
-      );
-      if (!hasSchedule) {
-        setSelectedBarber(null);
-      }
+    if (selectedBarber && !availableBarbers.some((barber) => barber.id === selectedBarber.id)) {
+      setSelectedBarber(null);
     }
-  }, [selectedDate, schedules, selectedBarber]);
+  }, [availableBarbers, selectedBarber]);
 
-  // Helpers for date formatting
-  const formatMonthYear = (date: Date) => {
-    const str = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  };
+  /* --- Horários livres --------------------------------------------------- */
 
-  // Filter barbers that work on the selected date
-  const availableBarbers = barbers.filter(barber => {
-    if (!selectedDate) return true;
-    const dayOfWeek = selectedDate.getDay();
-    return schedules.some(s => s.barber_id === barber.id && s.day_of_week === dayOfWeek);
-  });
+  useEffect(() => {
+    setSelectedTime(null);
 
-  // Calendar Generation
-  const generateCalendarDays = () => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 (Sun) to 6 (Sat)
-    
-    const days = [];
-    
-    for (let i = 0; i < firstDayOfMonth; i++) {
-      days.push(null);
-    }
-    
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(year, month, i));
-    }
-    
-    return days;
-  };
-
-  const isDateInPast = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date.getTime() < today.getTime();
-  };
-
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
-
-  const prevMonth = () => {
-    const today = new Date();
-    const currentMonthTime = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getTime();
-    const thisMonthTime = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
-    if (currentMonthTime > thisMonthTime) {
-      setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-    }
-  };
-
-  const isPrevMonthDisabled = () => {
-    const today = new Date();
-    return currentMonth.getFullYear() === today.getFullYear() && currentMonth.getMonth() === today.getMonth();
-  };
-
-  const handleContinueToTimes = async () => {
-    if (!selectedDate || !selectedBarber || !selectedService) return;
-    
-    setIsCheckingSlots(true);
-    setIsTimeSelectionVisible(true);
-    
-    const startOfDay = new Date(selectedDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(selectedDate);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    const [appointmentsRes, timeOffsRes] = await Promise.all([
-      supabase
-        .from('appointments')
-        .select('*')
-        .eq('barber_id', selectedBarber.id)
-        .gte('start_datetime', startOfDay.toISOString())
-        .lte('start_datetime', endOfDay.toISOString())
-        .neq('status', 'CANCELLED'),
-      supabase
-        .from('time_offs')
-        .select('*')
-        .eq('barber_id', selectedBarber.id)
-        .gte('start_datetime', startOfDay.toISOString())
-        .lte('start_datetime', endOfDay.toISOString())
-    ]);
-        
-    if (appointmentsRes.data) {
-      setBookedAppointments(appointmentsRes.data as Appointment[]);
-    }
-
-    if (timeOffsRes.data) {
-      setBlockedTimes(timeOffsRes.data.map(t => ({
-        start: new Date(t.start_datetime),
-        end: new Date(t.end_datetime)
-      })));
-    } else {
+    if (!selectedDate || !selectedBarber || !selectedService) {
+      setBookedAppointments([]);
       setBlockedTimes([]);
+      return;
     }
-    
-    setIsCheckingSlots(false);
-  };
 
-  const generateTimeSlots = () => {
+    let cancelled = false;
+    const fetchSlots = async () => {
+      setIsCheckingSlots(true);
+
+      const dayStart = new Date(selectedDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(selectedDate);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const [appointmentsRes, timeOffsRes] = await Promise.all([
+        supabase
+          .from('appointments')
+          .select('*')
+          .eq('barber_id', selectedBarber.id)
+          .gte('start_datetime', dayStart.toISOString())
+          .lte('start_datetime', dayEnd.toISOString())
+          .neq('status', 'CANCELLED'),
+        supabase
+          .from('time_offs')
+          .select('*')
+          .eq('barber_id', selectedBarber.id)
+          .gte('start_datetime', dayStart.toISOString())
+          .lte('start_datetime', dayEnd.toISOString()),
+      ]);
+
+      if (cancelled) return;
+
+      setBookedAppointments((appointmentsRes.data as Appointment[]) ?? []);
+      setBlockedTimes(
+        (timeOffsRes.data ?? []).map((timeOff) => ({
+          start: new Date(timeOff.start_datetime),
+          end: new Date(timeOff.end_datetime),
+        }))
+      );
+      setIsCheckingSlots(false);
+    };
+
+    fetchSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, selectedBarber, selectedService]);
+
+  const slots = useMemo(() => {
     if (!selectedDate || !selectedBarber || !selectedService) return [];
-    
-    const dayOfWeek = selectedDate.getDay();
-    const schedule = schedules.find(s => s.barber_id === selectedBarber.id && s.day_of_week === dayOfWeek);
-    
+
+    const schedule = schedules.find(
+      (s) => s.barber_id === selectedBarber.id && s.day_of_week === selectedDate.getDay()
+    );
     if (!schedule) return [];
-    
+
     return getAvailableTimeSlots(
       selectedDate,
       {
         start_time: schedule.start_time,
         end_time: schedule.end_time,
         lunch_start: schedule.lunch_start,
-        lunch_end: schedule.lunch_end
+        lunch_end: schedule.lunch_end,
       },
       selectedService.duration_minutes,
-      bookedAppointments.map(app => ({
-        start: new Date(app.start_datetime),
-        end: new Date(app.end_datetime)
+      bookedAppointments.map((appointment) => ({
+        start: new Date(appointment.start_datetime),
+        end: new Date(appointment.end_datetime),
       })),
-      blockedTimes.map(timeOff => ({
-        start: timeOff.start,
-        end: timeOff.end
-      }))
+      blockedTimes
     );
+  }, [selectedDate, selectedBarber, selectedService, schedules, bookedAppointments, blockedTimes]);
+
+  /* --- Calendário -------------------------------------------------------- */
+
+  const calendarDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leading = new Date(year, month, 1).getDay();
+
+    return [
+      ...Array.from({ length: leading }, () => null),
+      ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1)),
+    ];
+  }, [currentMonth]);
+
+  const today = useMemo(() => {
+    const value = new Date();
+    value.setHours(0, 0, 0, 0);
+    return value;
+  }, []);
+
+  const isCurrentMonth =
+    currentMonth.getFullYear() === today.getFullYear() && currentMonth.getMonth() === today.getMonth();
+
+  const shiftMonth = (delta: 1 | -1) => {
+    if (delta === -1 && isCurrentMonth) return;
+    setMonthDirection(delta);
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1));
   };
 
-  const handleBookAppointment = async () => {
-    if (!profile || !selectedDate || !selectedBarber || !selectedService || !selectedTime) return;
-    
-    setIsBooking(true);
-    
-    const [startHours, startMinutes] = selectedTime.split(':').map(Number);
-    const startDatetime = new Date(selectedDate);
-    startDatetime.setHours(startHours, startMinutes, 0, 0);
+  /* --- Confirmação ------------------------------------------------------- */
 
-    const endTotalMinutes = startHours * 60 + startMinutes + selectedService.duration_minutes;
-    const endHours = Math.floor(endTotalMinutes / 60);
-    const endMinutes = endTotalMinutes % 60;
-    const endDatetime = new Date(selectedDate);
-    endDatetime.setHours(endHours, endMinutes, 0, 0);
+  const handleBook = useCallback(async () => {
+    if (!profile || !selectedDate || !selectedBarber || !selectedService || !selectedTime) return;
+
+    setIsBooking(true);
+
+    const [hours, minutes] = selectedTime.split(':').map(Number);
+    const start = new Date(selectedDate);
+    start.setHours(hours, minutes, 0, 0);
+
+    const end = new Date(start);
+    end.setMinutes(end.getMinutes() + selectedService.duration_minutes);
 
     const { error } = await supabase.from('appointments').insert({
       customer_id: profile.id,
       barber_id: selectedBarber.id,
       service_id: selectedService.id,
-      start_datetime: startDatetime.toISOString(),
-      end_datetime: endDatetime.toISOString(),
-      status: 'CONFIRMED'
+      start_datetime: start.toISOString(),
+      end_datetime: end.toISOString(),
+      status: 'CONFIRMED',
     });
 
-    if (error) {
-      alert('Erro ao agendar horário. Tente novamente.');
-      console.error(error);
-    } else {
-      setToastMessage('Horário agendado com sucesso!');
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
-      
-      // Reset flow
-      setSelectedTime(null);
-      setSelectedService(null);
-      setSelectedBarber(null);
-      setSelectedDate(null);
-      setIsTimeSelectionVisible(false);
-    }
-    
     setIsBooking(false);
-  };
+
+    if (error) {
+      console.error(error);
+      toast.error('Não deu para marcar esse horário. Escolha outro e tente de novo.');
+      return;
+    }
+
+    setConfirmation({
+      date: start,
+      time: selectedTime,
+      barber: selectedBarber.full_name,
+      service: selectedService.name,
+      price: Number(selectedService.price),
+    });
+    toast.success('Horário marcado.');
+
+    setSelectedTime(null);
+    setSelectedService(null);
+    setSelectedBarber(null);
+    setSelectedDate(null);
+  }, [profile, selectedDate, selectedBarber, selectedService, selectedTime, toast]);
+
+  const stepsDone = [selectedDate, selectedBarber, selectedService, selectedTime].filter(Boolean).length;
+
+  /* --- Render ------------------------------------------------------------ */
 
   return (
-    <div className="space-y-6 sm:space-y-8 pb-24">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">Agendar Horário</h1>
-        <p className="text-zinc-500 mt-1">Escolha a data, o profissional e o serviço desejado.</p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Agendar"
+        title="Marque seu horário"
+        description="Escolha o dia, o profissional e o serviço. Os horários livres aparecem em seguida."
+      />
 
       {isLoading ? (
-        <div className="flex justify-center p-12">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-        </div>
+        <BookingSkeleton />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Left Column: Selection */}
-          <div className="lg:col-span-7 xl:col-span-8 space-y-6 sm:space-y-8">
-            
-            {/* Step 1: Date Selection */}
-            <section>
-              <div className="flex items-center gap-3 mb-4 sm:mb-5">
-                <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">1</div>
-                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Data do Atendimento</h2>
-              </div>
-              
-              <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-semibold text-zinc-900 capitalize">{formatMonthYear(currentMonth)}</h3>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={prevMonth}
-                      disabled={isPrevMonthDisabled()}
-                      className="p-1.5 border border-zinc-200 rounded-lg text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={nextMonth}
-                      className="p-1.5 border border-zinc-200 rounded-lg text-zinc-600 hover:bg-zinc-50 transition-colors"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-7 gap-y-4 gap-x-1 sm:gap-x-2 text-center mb-2">
-                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-                    <div key={day} className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                      {day}
+        <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
+          {/* Etapas */}
+          <div className="flex gap-4 sm:gap-5 lg:col-span-7 xl:col-span-8">
+            <PoleRail progress={(stepsDone / 4) * 100} />
+
+            <div className="min-w-0 flex-1 space-y-9">
+              {/* 1 — Data */}
+              <Step number={1} title="Dia do atendimento" ready done={Boolean(selectedDate)}>
+                <div className="card p-4 sm:p-5">
+                  <div className="mb-5 flex items-center justify-between">
+                    <h3 className="type-sign text-base text-ink">
+                      {currentMonth
+                        .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+                        .replace(/^./, (c) => c.toUpperCase())}
+                    </h3>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => shiftMonth(-1)}
+                        disabled={isCurrentMonth}
+                        className="icon-btn border border-line"
+                        aria-label="Mês anterior"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => shiftMonth(1)}
+                        className="icon-btn border border-line"
+                        aria-label="Próximo mês"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
-                  ))}
-                </div>
-                
-                <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                  {generateCalendarDays().map((date, index) => {
-                    if (!date) {
-                      return <div key={`empty-${index}`} className="h-10 sm:h-12" />;
-                    }
-                    
-                    const isSelected = selectedDate?.getTime() === date.getTime();
-                    const isPast = isDateInPast(date);
-                    
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => setSelectedDate(date)}
-                        disabled={isPast}
-                        className={`h-10 sm:h-12 rounded-xl flex items-center justify-center text-sm font-medium transition-all ${
-                          isSelected
-                            ? 'bg-zinc-900 text-white shadow-md'
-                            : isPast
-                            ? 'text-zinc-300 cursor-not-allowed'
-                            : 'text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
-                        }`}
-                      >
-                        {date.getDate()}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
+                  </div>
 
-            {/* Step 2: Barber Selection */}
-            <section className={!selectedDate ? 'opacity-40 pointer-events-none transition-all duration-300' : 'transition-all duration-300'}>
-              <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
-                <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">2</div>
-                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Profissional</h2>
-              </div>
-              
-              {availableBarbers.length === 0 && selectedDate ? (
-                <div className="p-6 bg-zinc-50 border border-zinc-200 rounded-2xl text-center">
-                  <p className="text-zinc-500 text-sm">Nenhum profissional disponível nesta data.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  {availableBarbers.map((barber) => {
-                    const isSelected = selectedBarber?.id === barber.id;
-                    return (
-                      <button
-                        key={barber.id}
-                        onClick={() => setSelectedBarber(barber)}
-                        className={`relative flex items-center gap-4 p-3 sm:p-4 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 ${
-                          isSelected
-                            ? 'border-zinc-900 bg-zinc-900/5 shadow-sm'
-                            : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
-                        }`}
-                      >
-                        <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <User className="w-6 h-6 text-zinc-400" />
-                        </div>
-                        <div className="flex-1 pr-6">
-                          <p className={`font-semibold ${isSelected ? 'text-zinc-900' : 'text-zinc-700'}`}>{barber.full_name}</p>
-                          <p className="text-xs text-zinc-500 font-medium">Barbeiro</p>
-                        </div>
-                        {isSelected && (
-                          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-900">
-                            <CheckCircle2 className="w-5 h-5" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+                  <div className="mb-2 grid grid-cols-7 gap-1 text-center sm:gap-1.5">
+                    {WEEKDAYS.map((day) => (
+                      <span key={day} className="type-tag py-1 text-ash">
+                        {day}
+                      </span>
+                    ))}
+                  </div>
 
-            {/* Step 3: Service Selection */}
-            <section className={!selectedBarber ? 'opacity-40 pointer-events-none transition-all duration-300' : 'transition-all duration-300'}>
-              <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
-                <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">3</div>
-                <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Serviço</h2>
-              </div>
-              
-              <div className="space-y-3">
-                {services.map((service) => {
-                  const isSelected = selectedService?.id === service.id;
-                  return (
-                    <button
-                      key={service.id}
-                      onClick={() => setSelectedService(service)}
-                      className={`relative w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 gap-4 sm:gap-0 ${
-                        isSelected
-                          ? 'border-zinc-900 bg-zinc-900/5 shadow-sm'
-                          : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 hover:shadow-sm'
-                      }`}
-                    >
-                      <div className="pr-0 sm:pr-12 w-full">
-                        <p className={`font-semibold text-base sm:text-lg ${isSelected ? 'text-zinc-900' : 'text-zinc-800'}`}>{service.name}</p>
-                        {service.description && (
-                          <p className="text-sm text-zinc-500 mt-1 line-clamp-2">{service.description}</p>
-                        )}
-                        <div className="flex items-center gap-3 mt-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                          <span className="flex items-center gap-1.5">
-                            <Clock className="w-4 h-4 text-zinc-400" />
-                            {service.duration_minutes} min
+                  <div
+                    key={`${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
+                    className={`grid grid-cols-7 gap-1 sm:gap-1.5 ${
+                      monthDirection === 1 ? 'anim-slide-left' : 'anim-slide-right'
+                    }`}
+                  >
+                    {calendarDays.map((date, index) => {
+                      if (!date) return <span key={`gap-${index}`} className="h-11" />;
+
+                      const isPast = date.getTime() < today.getTime();
+                      const isOpen = openWeekdays.has(date.getDay());
+                      const isSelected = selectedDate ? sameDay(selectedDate, date) : false;
+                      const isToday = sameDay(today, date);
+                      const disabled = isPast || !isOpen;
+
+                      return (
+                        <button
+                          key={date.toISOString()}
+                          type="button"
+                          onClick={() => setSelectedDate(date)}
+                          disabled={disabled}
+                          aria-current={isToday ? 'date' : undefined}
+                          className={`type-num relative flex h-11 items-center justify-center rounded-lg text-sm transition-all duration-200 ${
+                            isSelected
+                              ? 'bg-pine text-white shadow-lift'
+                              : disabled
+                                ? 'cursor-not-allowed text-ash'
+                                : 'text-graphite hover:bg-pine-wash hover:text-pine'
+                          } ${isToday && !isSelected ? 'ring-1 ring-brass/60 ring-inset' : ''}`}
+                        >
+                          {date.getDate()}
+                          {isOpen && !isPast && !isSelected && (
+                            <span
+                              className="absolute bottom-1.5 h-1 w-1 rounded-full bg-brass"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <p className="mt-4 flex items-center gap-2 border-t border-line-soft pt-4 text-xs text-ash">
+                    <span className="h-1.5 w-1.5 rounded-full bg-brass" aria-hidden="true" />
+                    Dias com equipe em expediente
+                  </p>
+                </div>
+              </Step>
+
+              {/* 2 — Profissional */}
+              <Step
+                number={2}
+                title="Profissional"
+                ready={Boolean(selectedDate)}
+                done={Boolean(selectedBarber)}
+              >
+                {availableBarbers.length === 0 ? (
+                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
+                    {selectedDate
+                      ? 'Ninguém atende nesse dia. Escolha outra data no calendário.'
+                      : 'Nenhum profissional cadastrado ainda. Fale com a barbearia.'}
+                  </p>
+                ) : (
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {availableBarbers.map((barber, index) => {
+                      const isSelected = selectedBarber?.id === barber.id;
+                      return (
+                        <button
+                          key={barber.id}
+                          type="button"
+                          onClick={() => setSelectedBarber(barber)}
+                          style={{ ['--d' as string]: `${index * 60}ms` }}
+                          className={`anim-rise-sm press flex items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200 ${
+                            isSelected
+                              ? 'border-pine bg-pine-wash shadow-card'
+                              : 'border-line bg-porcelain hover:border-ash hover:shadow-card'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-11 w-11 flex-none items-center justify-center rounded-full text-sm font-bold transition-colors ${
+                              isSelected ? 'bg-pine text-white' : 'bg-chalk text-smoke'
+                            }`}
+                          >
+                            {initials(barber.full_name)}
                           </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-2 pl-0 sm:pl-4 border-t sm:border-t-0 sm:border-l border-zinc-200/50 pt-3 sm:pt-0 w-full sm:w-auto">
-                        <div className="bg-white border border-zinc-200 px-3 py-1.5 rounded-full shadow-sm">
-                          <span className="font-bold text-zinc-900 whitespace-nowrap">
-                            R$ {Number(service.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-ink">
+                              {barber.full_name}
+                            </span>
+                            <span className="type-tag mt-1 block text-ash">Barbeiro</span>
                           </span>
-                        </div>
-                        {isSelected && (
-                          <CheckCircle2 className="w-5 h-5 text-zinc-900 mt-0 sm:mt-1 mr-0 sm:mr-1 hidden sm:block" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                          {isSelected && (
+                            <CheckCircle2 className="anim-pop h-5 w-5 flex-none text-pine" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </Step>
 
-            {/* Step 4: Time Selection */}
-            {isTimeSelectionVisible && (
-              <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center gap-3 mb-4 sm:mb-5 mt-4">
-                  <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 text-zinc-900 flex items-center justify-center text-sm font-semibold shadow-sm">4</div>
-                  <h2 className="text-lg sm:text-xl font-semibold text-zinc-900 tracking-tight">Horário</h2>
-                </div>
-                
+              {/* 3 — Serviço */}
+              <Step
+                number={3}
+                title="Serviço"
+                ready={Boolean(selectedBarber)}
+                done={Boolean(selectedService)}
+              >
+                {services.length === 0 ? (
+                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
+                    O catálogo ainda está vazio. Fale com a barbearia.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {services.map((service, index) => {
+                      const isSelected = selectedService?.id === service.id;
+                      return (
+                        <button
+                          key={service.id}
+                          type="button"
+                          onClick={() => setSelectedService(service)}
+                          style={{ ['--d' as string]: `${index * 60}ms` }}
+                          className={`anim-rise-sm press flex w-full items-start justify-between gap-4 rounded-xl border p-4 text-left transition-all duration-200 sm:p-5 ${
+                            isSelected
+                              ? 'border-pine bg-pine-wash shadow-card'
+                              : 'border-line bg-porcelain hover:border-ash hover:shadow-card'
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-[0.9375rem] font-semibold text-ink">
+                              {service.name}
+                            </span>
+                            {service.description && (
+                              <span className="mt-1 block text-sm leading-relaxed text-smoke">
+                                {service.description}
+                              </span>
+                            )}
+                            <span className="type-tag mt-2.5 flex items-center gap-1.5 text-ash">
+                              <Clock className="h-3.5 w-3.5" />
+                              {service.duration_minutes} min
+                            </span>
+                          </span>
+                          <span className="flex flex-none flex-col items-end gap-2">
+                            <span className="type-num text-base font-medium whitespace-nowrap text-ink">
+                              R$ {brl(service.price)}
+                            </span>
+                            {isSelected && <CheckCircle2 className="anim-pop h-5 w-5 text-pine" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </Step>
+
+              {/* 4 — Horário */}
+              <Step
+                number={4}
+                title="Horário"
+                ready={Boolean(selectedDate && selectedBarber && selectedService)}
+                done={Boolean(selectedTime)}
+              >
                 {isCheckingSlots ? (
-                  <div className="flex justify-center p-8 bg-zinc-50 border border-zinc-200 rounded-xl sm:rounded-2xl">
-                    <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                  <div className="card grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 sm:gap-2.5 sm:p-5">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="h-11" rounded="rounded-lg" />
+                    ))}
                   </div>
+                ) : !selectedDate || !selectedBarber || !selectedService ? (
+                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
+                    Conclua as etapas acima e os horários livres aparecem aqui.
+                  </p>
+                ) : slots.length === 0 ? (
+                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
+                    Esse dia já está cheio para {selectedBarber.full_name.split(' ')[0]}. Tente outra
+                    data ou outro profissional.
+                  </p>
                 ) : (
-                  <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
-                    {generateTimeSlots().length === 0 ? (
-                      <div className="text-center py-6">
-                        <p className="text-zinc-500 text-sm">Nenhum horário disponível para esta data.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
-                        {generateTimeSlots().map((time) => {
-                          const isSelected = selectedTime === time;
-                          return (
-                            <button
-                              key={time}
-                              onClick={() => setSelectedTime(time)}
-                              className={`py-2 sm:py-3 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                                isSelected
-                                  ? 'bg-zinc-900 text-white shadow-md ring-2 ring-zinc-900 ring-offset-2'
-                                  : 'bg-zinc-50 text-zinc-700 border border-zinc-200 hover:border-zinc-400 hover:bg-zinc-100'
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                  <div className="card grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 sm:gap-2.5 sm:p-5">
+                    {slots.map((time, index) => {
+                      const isSelected = selectedTime === time;
+                      return (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => setSelectedTime(time)}
+                          style={{ ['--d' as string]: `${index * 35}ms` }}
+                          className={`anim-pop type-num press rounded-lg border py-3 text-sm transition-all duration-200 ${
+                            isSelected
+                              ? 'border-pine bg-pine text-white shadow-lift'
+                              : 'border-line bg-porcelain text-graphite hover:border-pine hover:text-pine'
+                          }`}
+                        >
+                          {time}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
-              </section>
-            )}
-          </div>
-
-          {/* Right Column: Date & Time & Summary */}
-          <div className="lg:col-span-5 xl:col-span-4">
-            <div className="bg-white border border-zinc-200 rounded-xl sm:rounded-3xl p-5 sm:p-7 sticky top-24 shadow-sm">
-              <h3 className="text-base sm:text-lg font-semibold text-zinc-900 mb-5 sm:mb-6 tracking-tight">Resumo do Agendamento</h3>
-              
-              <div className="space-y-6 mb-8">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 flex items-center justify-center flex-shrink-0">
-                    <CalendarIcon className="w-4 h-4 text-zinc-500" />
-                  </div>
-                  <div className="pt-1">
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Data</p>
-                    <p className="text-base text-zinc-900 font-medium capitalize">
-                      {selectedDate 
-                        ? selectedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
-                        : <span className="text-zinc-400 font-normal">Não selecionada</span>}
-                    </p>
-                    {selectedTime && (
-                      <p className="text-sm font-semibold text-zinc-900 mt-1">
-                        às {selectedTime}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4 text-zinc-500" />
-                  </div>
-                  <div className="pt-1">
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Profissional</p>
-                    <p className="text-base text-zinc-900 font-medium">
-                      {selectedBarber ? selectedBarber.full_name : <span className="text-zinc-400 font-normal">Não selecionado</span>}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 flex items-center justify-center flex-shrink-0">
-                    <Scissors className="w-4 h-4 text-zinc-500" />
-                  </div>
-                  <div className="pt-1 flex-1">
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Serviço</p>
-                    <p className="text-base text-zinc-900 font-medium">
-                      {selectedService ? selectedService.name : <span className="text-zinc-400 font-normal">Não selecionado</span>}
-                    </p>
-                    {selectedService && (
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm font-medium text-zinc-500">
-                          {selectedService.duration_minutes} min
-                        </span>
-                        <span className="font-semibold text-zinc-900">
-                          R$ {Number(selectedService.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-zinc-200/60">
-                {!isTimeSelectionVisible ? (
-                  <>
-                    <button
-                      onClick={handleContinueToTimes}
-                      disabled={!selectedDate || !selectedBarber || !selectedService}
-                      className="w-full py-4 px-4 bg-zinc-900 text-white rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all duration-200 shadow-sm disabled:shadow-none"
-                    >
-                      Continuar para Horários
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                    {(!selectedDate || !selectedBarber || !selectedService) && (
-                      <p className="text-xs text-center text-zinc-500 mt-4">
-                        Conclua as etapas acima para continuar.
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={handleBookAppointment}
-                      disabled={!selectedTime || isBooking}
-                      className="w-full py-4 px-4 bg-zinc-900 text-white rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all duration-200 shadow-sm disabled:shadow-none"
-                    >
-                      {isBooking ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <>
-                          Confirmar Agendamento
-                          <CheckCircle2 className="w-5 h-5" />
-                        </>
-                      )}
-                    </button>
-                    {!selectedTime && (
-                      <p className="text-xs text-center text-zinc-500 mt-4">
-                        Selecione um horário para confirmar.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+              </Step>
             </div>
           </div>
-          
+
+          {/* Comanda */}
+          <aside className="lg:col-span-5 lg:sticky lg:top-24 xl:col-span-4">
+            {confirmation ? (
+              <div className="comanda anim-pop p-6 pt-8">
+                <p className="type-tag text-verdigris">Marcado</p>
+                <h2 className="type-display mt-3 text-3xl text-ink">
+                  {confirmation.date
+                    .toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+                    .replace(/^./, (c) => c.toUpperCase())}
+                </h2>
+                <p className="type-num mt-1 text-2xl text-pine">às {confirmation.time}</p>
+
+                <hr className="comanda-rule my-6" />
+
+                <dl className="space-y-3 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-smoke">Profissional</dt>
+                    <dd className="font-medium text-ink">{confirmation.barber}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-smoke">Serviço</dt>
+                    <dd className="font-medium text-ink">{confirmation.service}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-smoke">Valor</dt>
+                    <dd className="type-num font-medium text-ink">R$ {brl(confirmation.price)}</dd>
+                  </div>
+                </dl>
+
+                <hr className="comanda-rule my-6" />
+
+                <div className="flex flex-col gap-2.5">
+                  <Link to="/customer/appointments" className="btn btn-primary btn-lg w-full">
+                    Ver meus horários
+                  </Link>
+                  <Button variant="outline" block onClick={() => setConfirmation(null)}>
+                    Marcar outro
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="comanda p-6 pt-8">
+                <p className="type-tag text-brass-deep">Comanda</p>
+
+                <dl className="mt-6 space-y-5">
+                  <SummaryRow
+                    icon={CalendarDays}
+                    label="Data"
+                    value={
+                      selectedDate
+                        ? selectedDate
+                            .toLocaleDateString('pt-BR', {
+                              weekday: 'long',
+                              day: '2-digit',
+                              month: 'long',
+                            })
+                            .replace(/^./, (c) => c.toUpperCase())
+                        : null
+                    }
+                    detail={selectedTime ? `às ${selectedTime}` : undefined}
+                  />
+                  <SummaryRow
+                    icon={UserRound}
+                    label="Profissional"
+                    value={selectedBarber?.full_name ?? null}
+                  />
+                  <SummaryRow
+                    icon={Scissors}
+                    label="Serviço"
+                    value={selectedService?.name ?? null}
+                    detail={
+                      selectedService
+                        ? `${selectedService.duration_minutes} min · R$ ${brl(selectedService.price)}`
+                        : undefined
+                    }
+                  />
+                </dl>
+
+                <hr className="comanda-rule my-6" />
+
+                <Button
+                  block
+                  size="lg"
+                  onClick={handleBook}
+                  loading={isBooking}
+                  loadingLabel="Confirmando"
+                  disabled={!selectedTime}
+                >
+                  Confirmar agendamento
+                </Button>
+
+                <p className="mt-3 text-center text-xs text-ash">
+                  {selectedTime
+                    ? 'O horário sai da agenda assim que você confirmar.'
+                    : `Faltam ${4 - stepsDone} ${4 - stepsDone === 1 ? 'etapa' : 'etapas'} para confirmar.`}
+                </p>
+              </div>
+            )}
+          </aside>
         </div>
       )}
-
-      {/* Toast Notification */}
-      <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ${showToast ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'}`}>
-        <div className="bg-zinc-900 text-white px-5 py-3 rounded-full shadow-lg flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 text-green-400" />
-          <span className="font-medium text-sm">{toastMessage}</span>
-        </div>
-      </div>
     </div>
   );
 };
 
+/* ------------------------------------------------------------ Linha da comanda */
+
+const SummaryRow = ({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof CalendarDays;
+  label: string;
+  value: string | null;
+  detail?: string;
+}) => (
+  <div className="flex items-start gap-3.5">
+    <span
+      className={`flex h-9 w-9 flex-none items-center justify-center rounded-lg transition-colors duration-300 ${
+        value ? 'bg-pine-wash text-pine' : 'bg-chalk text-ash'
+      }`}
+    >
+      <Icon className="h-4 w-4" strokeWidth={1.9} />
+    </span>
+    <div className="min-w-0 flex-1">
+      <dt className="type-tag text-ash">{label}</dt>
+      <dd key={value ?? 'empty'} className={`mt-1.5 ${value ? 'anim-tick' : ''}`}>
+        <span className={`block text-sm ${value ? 'font-semibold text-ink' : 'text-ash'}`}>
+          {value ?? 'A escolher'}
+        </span>
+        {detail && <span className="type-num mt-0.5 block text-xs text-smoke">{detail}</span>}
+      </dd>
+    </div>
+  </div>
+);

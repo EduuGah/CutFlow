@@ -1,134 +1,111 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lock, Mail } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { AuthShell } from '../../components/layout/AuthShell';
+import { Button } from '../../components/ui/Button';
+import { Field, Notice } from '../../components/ui/Field';
+
+const HOME_BY_ROLE = { ADMIN: '/admin', BARBER: '/barber', CUSTOMER: '/customer' } as const;
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const { user, profile, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Redireciona o usuário caso ele já esteja logado e o perfil carregado
   useEffect(() => {
     if (profile) {
-      if (profile.role === 'ADMIN') navigate('/admin', { replace: true });
-      else if (profile.role === 'BARBER') navigate('/barber', { replace: true });
-      else navigate('/customer', { replace: true });
+      navigate(HOME_BY_ROLE[profile.role] ?? '/customer', { replace: true });
     } else if (user && !authLoading) {
-      setError("Login feito, mas perfil não encontrado. Você rodou o script SQL no painel do Supabase?");
+      setError(
+        'A senha confere, mas esta conta não tem perfil no banco. Rode o script SQL do projeto no painel do Supabase e tente de novo.'
+      );
+      setIsSigningIn(false);
     }
   }, [profile, user, authLoading, navigate]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSigningIn(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError) {
-      // Tradução simples para os erros mais comuns do Supabase
-      if (authError.message === 'Invalid login credentials') {
-        setError('E-mail ou senha inválidos.');
-      } else {
-        setError(authError.message);
-      }
-      setIsLoading(false);
+      setError(
+        authError.message === 'Invalid login credentials'
+          ? 'E-mail ou senha não conferem. Confira os dois e tente de novo.'
+          : authError.message
+      );
+      setIsSigningIn(false);
     }
-    // Nota: Em caso de sucesso, o onAuthStateChange do AuthContext vai detectar,
-    // carregar o perfil e o useEffect acima fará o redirecionamento.
+    // No sucesso, o AuthContext carrega o perfil e o efeito acima redireciona.
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-zinc-200">
-        <div className="flex flex-col items-center mb-8">
-          <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">CutFlow</h1>
-          <p className="text-zinc-500 mt-2 text-sm text-center">
-            Acesse sua conta para gerenciar seus agendamentos.
-          </p>
-        </div>
+    <AuthShell
+      eyebrow="Entrar"
+      title="Bem-vindo de volta"
+      description="Acesse para ver seus horários e marcar o próximo corte."
+      asideTitle="A agenda da casa, aberta o tempo todo."
+      asideBody="Cliente marca sozinho, barbeiro comanda o dia e o dono acompanha tudo — na mesma tela."
+      footer={
+        <p>
+          Ainda não tem conta?{' '}
+          <Link to="/register" className="link-underline font-semibold text-pine">
+            Criar uma agora
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleLogin} className="space-y-5" noValidate>
+        {error && <Notice tone="error">{error}</Notice>}
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm text-center">
-            {error}
-          </div>
-        )}
+        <Field label="E-mail" htmlFor="email" icon={Mail}>
+          <input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="input input-icon"
+            placeholder="voce@email.com"
+            disabled={isSigningIn}
+          />
+        </Field>
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="text-sm font-medium text-zinc-700">
-              E-mail
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-zinc-400" />
-              </div>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all placeholder:text-zinc-400"
-                placeholder="seu@email.com"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
+        <Field label="Senha" htmlFor="password" icon={Lock}>
+          <input
+            id="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="input input-icon"
+            placeholder="••••••••"
+            disabled={isSigningIn}
+          />
+        </Field>
 
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="text-sm font-medium text-zinc-700">
-              Senha
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-zinc-400" />
-              </div>
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all placeholder:text-zinc-400"
-                placeholder="••••••••"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading || !email || !password}
-            className="w-full flex items-center justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-2"
-          >
-            {isLoading ? (
-              <Loader2 className="animate-spin h-5 w-5" />
-            ) : (
-              'Entrar'
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-zinc-600">
-            Ainda não tem conta?{' '}
-            <Link to="/register" className="font-medium text-zinc-900 hover:underline">
-              Cadastre-se para testar
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+        <Button
+          type="submit"
+          block
+          size="lg"
+          loading={isSigningIn}
+          loadingLabel="Entrando"
+          disabled={!email || !password}
+          className="mt-2"
+        >
+          Entrar
+        </Button>
+      </form>
+    </AuthShell>
   );
 };
-

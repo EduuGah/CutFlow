@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ProfileSettings } from './ProfileSettings';
 import * as AuthContext from '../../contexts/AuthContext';
 
@@ -22,10 +22,16 @@ describe('ProfileSettings Phone Masking', () => {
   it('applies the phone mask correctly to inputs', async () => {
     vi.mocked(AuthContext.useAuth).mockReturnValue({
       user: { id: '123' } as any,
-      profile: { id: '123', full_name: 'John Doe', role: 'CUSTOMER', created_at: '2024' },
+      profile: {
+        id: '123',
+        email: 'john@example.com',
+        full_name: 'John Doe',
+        role: 'CUSTOMER',
+        created_at: '2024',
+      },
       isLoading: false,
-      signUp: vi.fn(),
-      signIn: vi.fn(),
+      refreshProfile: vi.fn(),
+      session: null,
     });
 
     render(<ProfileSettings />);
