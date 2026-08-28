@@ -149,7 +149,8 @@ export const ServicesManagement = () => {
         </div>
       ) : (
         <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
               <tr>
                 <th className="px-6 py-4 font-medium">Serviço</th>
@@ -198,6 +199,7 @@ export const ServicesManagement = () => {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

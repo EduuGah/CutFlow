@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Scissors, Users, Calendar, LogOut, Menu } from 'lucide-react';
+import { LayoutDashboard, Scissors, Users, Calendar, LogOut } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -17,18 +17,31 @@ export const AdminLayout = () => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
     { icon: Scissors, label: 'Serviços', path: '/admin/services' },
     { icon: Users, label: 'Barbeiros', path: '/admin/barbers' },
-    { icon: Calendar, label: 'Agenda Geral', path: '/admin/schedule' },
+    { icon: Calendar, label: 'Agenda', path: '/admin/schedule' },
   ];
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-white border-r border-zinc-200 flex-shrink-0 flex flex-col">
+      {/* Mobile Top Header */}
+      <header className="md:hidden bg-white border-b border-zinc-200 sticky top-0 z-30 px-4 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
+            <Scissors className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow Admin</span>
+        </div>
+        <button onClick={handleLogout} className="p-2 text-zinc-500 hover:text-red-600">
+          <LogOut className="w-5 h-5" />
+        </button>
+      </header>
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-zinc-200 flex-shrink-0 flex-col">
         <div className="p-6 border-b border-zinc-200 flex items-center gap-3">
           <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
             <Scissors className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow</span>
+          <span className="font-bold text-xl tracking-tight text-zinc-900">CutFlow Admin</span>
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -69,11 +82,32 @@ export const AdminLayout = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 overflow-y-auto">
-        <div className="p-8">
+      <main className="flex-1 min-w-0 overflow-y-auto pb-24 md:pb-0">
+        <div className="p-4 md:p-8">
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 pb-safe z-40">
+        <div className="flex items-center justify-around p-2">
+          {menuItems.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === '/admin'}
+              className={({ isActive }) =>
+                `flex flex-col items-center p-2 rounded-lg text-[10px] font-medium w-full ${
+                  isActive ? 'text-zinc-900 bg-zinc-50' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
+                }`
+              }
+            >
+              <item.icon className="w-5 h-5 mb-1" />
+              <span className="truncate w-full text-center">{item.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
