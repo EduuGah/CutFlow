@@ -1,0 +1,37 @@
+--- src/pages/customer/CustomerDashboard.tsx
++++ src/pages/customer/CustomerDashboard.tsx
+@@ -28,6 +28,10 @@
+   const [isCheckingSlots, setIsCheckingSlots] = useState(false);
+   const [isBooking, setIsBooking] = useState(false);
+ 
++  // Toast State
++  const [toastMessage, setToastMessage] = useState<string | null>(null);
++  const [showToast, setShowToast] = useState(false);
++
+   // Reset time selection when inputs change
+   useEffect(() => {
+     setIsTimeSelectionVisible(false);
+@@ -254,14 +258,21 @@
+ 
+     if (error) {
+-      alert('Erro ao agendar horário. Tente novamente.');
+       console.error(error);
++      alert('Erro ao agendar horário. Tente novamente.');
+     } else {
+-      alert('Horário agendado com sucesso!');
++      // Show Toast
++      setToastMessage('Horário agendado com sucesso!');
++      setShowToast(true);
++      setTimeout(() => {
++        setShowToast(false);
++      }, 3000);
++      
+       // Reset flow
+       setSelectedTime(null);
+       setSelectedService(null);
+       setSelectedBarber(null);
+       setSelectedDate(null);
+       setIsTimeSelectionVisible(false);
+     }
+     setIsBooking(false);
+   };

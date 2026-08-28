@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../config/supabase';
 import { format, addDays, subDays, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Clock, Scissors, User, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Scissors, User, ChevronLeft, ChevronRight, Loader2, Star } from 'lucide-react';
 import { AppointmentStatus } from '../../types';
 
 interface AdminAppointment {
@@ -13,6 +13,7 @@ interface AdminAppointment {
   customer: { full_name: string; phone: string | null };
   barber: { full_name: string };
   service: { name: string; price: number; duration_minutes: number };
+  review?: { id: string; rating: number; comment: string | null }[] | any;
 }
 
 export const AdminSchedule = () => {
@@ -40,7 +41,8 @@ export const AdminSchedule = () => {
         status,
         customer:users!customer_id(full_name, phone),
         barber:users!barber_id(full_name),
-        service:services!service_id(name, price, duration_minutes)
+        service:services!service_id(name, price, duration_minutes),
+        review:reviews(id, rating, comment)
       `)
       .gte('start_datetime', startOfDay.toISOString())
       .lte('start_datetime', endOfDay.toISOString())
@@ -264,6 +266,29 @@ export const AdminSchedule = () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* Review Section */}
+                      {(() => {
+                        const existingReview = Array.isArray(app.review) ? app.review[0] : app.review;
+                        if (app.status === 'COMPLETED' && existingReview) {
+                          return (
+                            <div className="mt-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Avaliação do Cliente</p>
+                                <div className="flex items-center">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star key={star} className={`w-3.5 h-3.5 ${star <= existingReview.rating ? 'fill-amber-400 text-amber-400' : 'fill-zinc-200 text-zinc-200'}`} />
+                                  ))}
+                                </div>
+                              </div>
+                              {existingReview.comment && (
+                                <p className="text-sm text-zinc-700 italic">"{existingReview.comment}"</p>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   );
                 })}

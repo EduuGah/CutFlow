@@ -24,6 +24,10 @@ export const CustomerDashboard = () => {
   const [isCheckingSlots, setIsCheckingSlots] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
+  // Toast State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showToast, setShowToast] = useState(false);
+
   // Reset time selection when inputs change
   useEffect(() => {
     setIsTimeSelectionVisible(false);
@@ -254,7 +258,12 @@ export const CustomerDashboard = () => {
       alert('Erro ao agendar horário. Tente novamente.');
       console.error(error);
     } else {
-      alert('Horário agendado com sucesso!');
+      setToastMessage('Horário agendado com sucesso!');
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
+      
       // Reset flow
       setSelectedTime(null);
       setSelectedService(null);
@@ -590,6 +599,14 @@ export const CustomerDashboard = () => {
           
         </div>
       )}
+
+      {/* Toast Notification */}
+      <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ${showToast ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'}`}>
+        <div className="bg-zinc-900 text-white px-5 py-3 rounded-full shadow-lg flex items-center gap-2">
+          <CheckCircle2 className="w-5 h-5 text-green-400" />
+          <span className="font-medium text-sm">{toastMessage}</span>
+        </div>
+      </div>
     </div>
   );
 };

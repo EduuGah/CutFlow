@@ -1,0 +1,16 @@
+--- src/pages/customer/CustomerAppointments.tsx
++++ src/pages/customer/CustomerAppointments.tsx
+@@ -4,6 +4,7 @@
+-import { Calendar, Clock, Scissors, User, Loader2, CheckCircle2 } from 'lucide-react';
++import { Calendar, Clock, Scissors, User, Loader2, CheckCircle2, Star, MessageSquare } from 'lucide-react';
+ 
+ interface AppointmentData {
+   id: string;
+   start_datetime: string;
+   end_datetime: string;
+   status: string;
++  barber_id: string;
+   barber: { full_name: string };
+   service: { name: string; price: number; duration_minutes: number };
++  review?: { id: string; rating: number; comment: string | null }[] | any;
+ }

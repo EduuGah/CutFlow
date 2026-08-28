@@ -136,3 +136,11 @@ create policy "Barbeiros veem os agendamentos atribuídos a eles" on public.appo
 -- 1. As permissões de INSERT/UPDATE completas (para Admins) ou de inserção 
 -- de agendamentos precisarão ser refinadas mais tarde com base na lógica exata do app.
 -- Este arquivo inicializa a estrutura base com segurança padrão ligada (RLS ativado).
+
+-- REVIEWS: Clientes podem inserir suas próprias avaliações e todos podem ler
+create policy "Todos autenticados podem ver avaliações" on public.reviews
+  for select using (auth.role() = 'authenticated');
+
+create policy "Clientes podem inserir avaliações" on public.reviews
+  for insert with check (auth.uid() = customer_id);
+

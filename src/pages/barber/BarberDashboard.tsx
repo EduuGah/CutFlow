@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
 import { format, addDays, subDays, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Calendar as CalendarIcon, Clock, Scissors, User, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Loader2, Play, Undo2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Scissors, User, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Loader2, Play, Undo2, Star } from 'lucide-react';
 import { AppointmentStatus } from '../../types';
 
 interface DailyAppointment {
@@ -13,6 +13,7 @@ interface DailyAppointment {
   status: AppointmentStatus;
   customer: { full_name: string; phone: string | null };
   service: { name: string; price: number; duration_minutes: number };
+  review?: { id: string; rating: number; comment: string | null }[] | any;
 }
 
 export const BarberDashboard = () => {
@@ -40,7 +41,8 @@ export const BarberDashboard = () => {
         end_datetime,
         status,
         customer:users!customer_id(full_name, phone),
-        service:services!service_id(name, price, duration_minutes)
+        service:services!service_id(name, price, duration_minutes),
+        review:reviews(id, rating, comment)
       `)
       .eq('barber_id', profile.id)
       .gte('start_datetime', startOfDay.toISOString())
@@ -193,25 +195,50 @@ export const BarberDashboard = () => {
                 </div>
 
                 {/* Info Block */}
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5" /> Cliente
-                    </p>
-                    <p className="text-base font-semibold text-zinc-900">{app.customer.full_name}</p>
-                    {app.customer.phone && (
-                      <p className="text-sm text-zinc-500">{app.customer.phone}</p>
-                    )}
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5" /> Cliente
+                      </p>
+                      <p className="text-base font-semibold text-zinc-900">{app.customer.full_name}</p>
+                      {app.customer.phone && (
+                        <p className="text-sm text-zinc-500">{app.customer.phone}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                        <Scissors className="w-3.5 h-3.5" /> Serviço
+                      </p>
+                      <p className="text-base font-semibold text-zinc-900">{app.service.name}</p>
+                      <p className="text-sm font-medium text-zinc-500">
+                        R$ {Number(app.service.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                      <Scissors className="w-3.5 h-3.5" /> Serviço
-                    </p>
-                    <p className="text-base font-semibold text-zinc-900">{app.service.name}</p>
-                    <p className="text-sm font-medium text-zinc-500">
-                      R$ {Number(app.service.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
+
+                  {/* Review Section */}
+                  {(() => {
+                    const existingReview = Array.isArray(app.review) ? app.review[0] : app.review;
+                    if (app.status === 'COMPLETED' && existingReview) {
+                      return (
+                        <div className="mt-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Avaliação do Cliente</p>
+                            <div className="flex items-center">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star key={star} className={`w-3.5 h-3.5 ${star <= existingReview.rating ? 'fill-amber-400 text-amber-400' : 'fill-zinc-200 text-zinc-200'}`} />
+                              ))}
+                            </div>
+                          </div>
+                          {existingReview.comment && (
+                            <p className="text-sm text-zinc-700 italic">"{existingReview.comment}"</p>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* Actions & Status */}
