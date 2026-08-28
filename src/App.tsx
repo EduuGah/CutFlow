@@ -17,6 +17,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ServicesManagement } from './pages/admin/ServicesManagement';
 import { BarbersManagement } from './pages/admin/BarbersManagement';
 import { AdminSchedule } from './pages/admin/AdminSchedule';
+import { AdminTimeOffs } from './pages/admin/AdminTimeOffs';
 import { ProfileSettings } from './pages/shared/ProfileSettings';
 
 function App() {
@@ -54,6 +55,7 @@ function App() {
               <Route path="/admin/services" element={<ServicesManagement />} />
               <Route path="/admin/barbers" element={<BarbersManagement />} />
               <Route path="/admin/schedule" element={<AdminSchedule />} />
+              <Route path="/admin/time-offs" element={<AdminTimeOffs />} />
               <Route path="/admin/profile" element={<ProfileSettings />} />
             </Route>
           </Route>

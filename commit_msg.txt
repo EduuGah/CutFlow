@@ -1,7 +1,0 @@
-feat: implementar edição de perfil, gráficos no admin e correções no login
-
-- Adiciona a página de configurações de perfil (ProfileSettings) para clientes, barbeiros e administradores.
-- Implementa formatação/máscara para o campo de telefone na edição do perfil.
-- Integra a biblioteca Recharts no AdminDashboard para exibição gráfica de métricas (faturamento e status de agendamentos).
-- Resolve problema de concorrência (race condition) no AuthContext que exibia falso aviso de perfil não encontrado na tela de Login.
-- Atualiza os layouts (AdminLayout, BarberLayout, CustomerLayout) com menu de navegação para a tela de configurações.

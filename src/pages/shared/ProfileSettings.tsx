@@ -126,7 +126,7 @@ export const ProfileSettings = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-zinc-700 mb-1.5">Nome Completo</label>
+            <label htmlFor="full_name" className="block text-sm font-semibold text-zinc-700 mb-1.5">Nome Completo</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <User className="w-5 h-5 text-zinc-400" />
@@ -142,7 +142,7 @@ export const ProfileSettings = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-zinc-700 mb-1.5">Telefone / WhatsApp</label>
+            <label htmlFor="phone" className="block text-sm font-semibold text-zinc-700 mb-1.5">Telefone / WhatsApp</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Phone className="w-5 h-5 text-zinc-400" />

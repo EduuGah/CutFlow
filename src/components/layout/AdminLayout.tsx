@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Scissors, Users, Calendar, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, Scissors, Users, Calendar, LogOut, User, Clock } from 'lucide-react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -18,6 +18,7 @@ export const AdminLayout = () => {
     { icon: Scissors, label: 'Serviços', path: '/admin/services' },
     { icon: Users, label: 'Barbeiros', path: '/admin/barbers' },
     { icon: Calendar, label: 'Agenda', path: '/admin/schedule' },
+    { icon: Clock, label: 'Bloqueios', path: '/admin/time-offs' },
   ];
 
   return (

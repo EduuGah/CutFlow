@@ -184,79 +184,24 @@ export const CustomerDashboard = () => {
     
     if (!schedule) return [];
     
-    const parseTime = (timeStr: string) => {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-    
-    const formatTime = (minutes: number) => {
-      const h = Math.floor(minutes / 60);
-      const m = minutes % 60;
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    };
-    
-    const startMins = parseTime(schedule.start_time);
-    const endMins = parseTime(schedule.end_time);
-    const lunchStartMins = schedule.lunch_start ? parseTime(schedule.lunch_start) : null;
-    const lunchEndMins = schedule.lunch_end ? parseTime(schedule.lunch_end) : null;
-    
-    const serviceDuration = selectedService.duration_minutes;
-    const slots: string[] = [];
-    
-    const bookedRanges = bookedAppointments.map(app => {
-      const start = new Date(app.start_datetime);
-      const end = new Date(app.end_datetime);
-      return {
-        start: start.getHours() * 60 + start.getMinutes(),
-        end: end.getHours() * 60 + end.getMinutes()
-      };
-    });
-
-    const timeOffRanges = blockedTimes.map(timeOff => {
-      return {
-        start: timeOff.start.getHours() * 60 + timeOff.start.getMinutes(),
-        end: timeOff.end.getHours() * 60 + timeOff.end.getMinutes()
-      };
-    });
-    
-    let currentMins = startMins;
-    const slotInterval = 30; // 30 minutes blocks
-    
-    const today = new Date();
-    const isToday = selectedDate.getDate() === today.getDate() && 
-                    selectedDate.getMonth() === today.getMonth() && 
-                    selectedDate.getFullYear() === today.getFullYear();
-    const currentDayMins = today.getHours() * 60 + today.getMinutes();
-    
-    while (currentMins + serviceDuration <= endMins) {
-      const slotStart = currentMins;
-      const slotEnd = currentMins + serviceDuration;
-      
-      // Skip if in the past today (add 30 mins margin)
-      if (isToday && slotStart <= currentDayMins + 30) {
-        currentMins += slotInterval;
-        continue;
-      }
-      
-      const overlapsLunch = lunchStartMins !== null && lunchEndMins !== null &&
-        (slotStart < lunchEndMins && slotEnd > lunchStartMins);
-          
-      const overlapsBooked = bookedRanges.some(booked => 
-        (slotStart < booked.end && slotEnd > booked.start)
-      );
-
-      const overlapsTimeOff = timeOffRanges.some(blocked =>
-        (slotStart < blocked.end && slotEnd > blocked.start)
-      );
-      
-      if (!overlapsLunch && !overlapsBooked && !overlapsTimeOff) {
-        slots.push(formatTime(slotStart));
-      }
-      
-      currentMins += slotInterval;
-    }
-    
-    return slots;
+    return getAvailableTimeSlots(
+      selectedDate,
+      {
+        start_time: schedule.start_time,
+        end_time: schedule.end_time,
+        lunch_start: schedule.lunch_start,
+        lunch_end: schedule.lunch_end
+      },
+      selectedService.duration_minutes,
+      bookedAppointments.map(app => ({
+        start: new Date(app.start_datetime),
+        end: new Date(app.end_datetime)
+      })),
+      blockedTimes.map(timeOff => ({
+        start: timeOff.start,
+        end: timeOff.end
+      }))
+    );
   };
 
   const handleBookAppointment = async () => {
