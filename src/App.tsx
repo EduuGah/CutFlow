@@ -15,6 +15,7 @@ import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { ServicesManagement } from './pages/admin/ServicesManagement';
 import { BarbersManagement } from './pages/admin/BarbersManagement';
+import { AdminSchedule } from './pages/admin/AdminSchedule';
 
 function App() {
   return (
@@ -49,7 +50,7 @@ function App() {
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/services" element={<ServicesManagement />} />
               <Route path="/admin/barbers" element={<BarbersManagement />} />
-              {/* Future admin routes will go here (Schedule, etc) */}
+              <Route path="/admin/schedule" element={<AdminSchedule />} />
             </Route>
           </Route>
           
