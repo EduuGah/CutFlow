@@ -9,6 +9,7 @@ import {
   Scissors,
   UserRound,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
 import { Appointment, BarberSchedule, Service, UserProfile } from '../../types';
@@ -46,18 +47,36 @@ interface StepProps {
 }
 
 const Step = ({ number, title, ready, done, children }: StepProps) => (
-  <section className="transition-opacity duration-500" style={{ opacity: ready ? 1 : 0.4 }}>
+  <motion.section 
+    initial={false}
+    animate={{ opacity: ready ? 1 : 0.4 }}
+    transition={{ duration: 0.5, ease: 'easeOut' }}
+  >
     <div className="mb-4 flex items-center gap-3">
       <span className="type-num text-sm text-ash">{String(number).padStart(2, '0')}</span>
       <h2 className="type-sign text-lg text-ink">{title}</h2>
-      {done && (
-        <CheckCircle2 className="anim-pop h-4 w-4 text-verdigris" strokeWidth={2.5} aria-label="etapa concluída" />
-      )}
+      <AnimatePresence>
+        {done && (
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          >
+            <CheckCircle2 className="h-4 w-4 text-verdigris" strokeWidth={2.5} aria-label="etapa concluída" />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
     <fieldset disabled={!ready} className="min-w-0 border-0 p-0">
-      {children}
+      <motion.div
+        animate={{ filter: ready ? 'grayscale(0%)' : 'grayscale(100%)' }}
+        transition={{ duration: 0.5 }}
+      >
+        {children}
+      </motion.div>
     </fieldset>
-  </section>
+  </motion.section>
 );
 
 /* ------------------------------------------------------------------ Página */
@@ -400,63 +419,11 @@ export const CustomerDashboard = () => {
                 </div>
               </Step>
 
-              {/* 2 — Profissional */}
+              {/* 2 — Serviço */}
               <Step
                 number={2}
-                title="Profissional"
-                ready={Boolean(selectedDate)}
-                done={Boolean(selectedBarber)}
-              >
-                {availableBarbers.length === 0 ? (
-                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
-                    {selectedDate
-                      ? 'Ninguém atende nesse dia. Escolha outra data no calendário.'
-                      : 'Nenhum profissional cadastrado ainda. Fale com a barbearia.'}
-                  </p>
-                ) : (
-                  <div className="grid gap-2.5 sm:grid-cols-2">
-                    {availableBarbers.map((barber, index) => {
-                      const isSelected = selectedBarber?.id === barber.id;
-                      return (
-                        <button
-                          key={barber.id}
-                          type="button"
-                          onClick={() => setSelectedBarber(barber)}
-                          style={{ ['--d' as string]: `${index * 60}ms` }}
-                          className={`anim-rise-sm press flex items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200 ${
-                            isSelected
-                              ? 'border-pine bg-pine-wash shadow-card'
-                              : 'border-line bg-porcelain hover:border-ash hover:shadow-card'
-                          }`}
-                        >
-                          <span
-                            className={`flex h-11 w-11 flex-none items-center justify-center rounded-full text-sm font-bold transition-colors ${
-                              isSelected ? 'bg-pine text-white' : 'bg-chalk text-smoke'
-                            }`}
-                          >
-                            {initials(barber.full_name)}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold text-ink">
-                              {barber.full_name}
-                            </span>
-                            <span className="type-tag mt-1 block text-ash">Barbeiro</span>
-                          </span>
-                          {isSelected && (
-                            <CheckCircle2 className="anim-pop h-5 w-5 flex-none text-pine" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </Step>
-
-              {/* 3 — Serviço */}
-              <Step
-                number={3}
                 title="Serviço"
-                ready={Boolean(selectedBarber)}
+                ready={Boolean(selectedDate)}
                 done={Boolean(selectedService)}
               >
                 {services.length === 0 ? (
@@ -499,6 +466,58 @@ export const CustomerDashboard = () => {
                             </span>
                             {isSelected && <CheckCircle2 className="anim-pop h-5 w-5 text-pine" />}
                           </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </Step>
+
+              {/* 3 — Profissional */}
+              <Step
+                number={3}
+                title="Profissional"
+                ready={Boolean(selectedService)}
+                done={Boolean(selectedBarber)}
+              >
+                {availableBarbers.length === 0 ? (
+                  <p className="card-quiet px-5 py-6 text-sm text-smoke">
+                    {selectedDate
+                      ? 'Ninguém atende nesse dia. Escolha outra data no calendário.'
+                      : 'Nenhum profissional cadastrado ainda. Fale com a barbearia.'}
+                  </p>
+                ) : (
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {availableBarbers.map((barber, index) => {
+                      const isSelected = selectedBarber?.id === barber.id;
+                      return (
+                        <button
+                          key={barber.id}
+                          type="button"
+                          onClick={() => setSelectedBarber(barber)}
+                          style={{ ['--d' as string]: `${index * 60}ms` }}
+                          className={`anim-rise-sm press flex items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200 ${
+                            isSelected
+                              ? 'border-pine bg-pine-wash shadow-card'
+                              : 'border-line bg-porcelain hover:border-ash hover:shadow-card'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-11 w-11 flex-none items-center justify-center rounded-full text-sm font-bold transition-colors ${
+                              isSelected ? 'bg-pine text-white' : 'bg-chalk text-smoke'
+                            }`}
+                          >
+                            {initials(barber.full_name)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-ink">
+                              {barber.full_name}
+                            </span>
+                            <span className="type-tag mt-1 block text-ash">Barbeiro</span>
+                          </span>
+                          {isSelected && (
+                            <CheckCircle2 className="anim-pop h-5 w-5 flex-none text-pine" />
+                          )}
                         </button>
                       );
                     })}
@@ -570,12 +589,12 @@ export const CustomerDashboard = () => {
 
                 <dl className="space-y-3 text-sm">
                   <div className="flex justify-between gap-4">
-                    <dt className="text-smoke">Profissional</dt>
-                    <dd className="font-medium text-ink">{confirmation.barber}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
                     <dt className="text-smoke">Serviço</dt>
                     <dd className="font-medium text-ink">{confirmation.service}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-smoke">Profissional</dt>
+                    <dd className="font-medium text-ink">{confirmation.barber}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-smoke">Valor</dt>
@@ -616,11 +635,6 @@ export const CustomerDashboard = () => {
                     detail={selectedTime ? `às ${selectedTime}` : undefined}
                   />
                   <SummaryRow
-                    icon={UserRound}
-                    label="Profissional"
-                    value={selectedBarber?.full_name ?? null}
-                  />
-                  <SummaryRow
                     icon={Scissors}
                     label="Serviço"
                     value={selectedService?.name ?? null}
@@ -629,6 +643,11 @@ export const CustomerDashboard = () => {
                         ? `${selectedService.duration_minutes} min · R$ ${brl(selectedService.price)}`
                         : undefined
                     }
+                  />
+                  <SummaryRow
+                    icon={UserRound}
+                    label="Profissional"
+                    value={selectedBarber?.full_name ?? null}
                   />
                 </dl>
 

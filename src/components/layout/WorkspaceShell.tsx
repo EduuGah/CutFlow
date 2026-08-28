@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { LogOut, LucideIcon } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { AnimatePresence } from 'motion/react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Logo } from '../ui/Logo';
@@ -125,11 +126,13 @@ export const WorkspaceShell = ({ items, suffix, roleLabel, profilePath }: Worksp
 
       {/* Conteúdo */}
       <main className="min-w-0 flex-1 px-4 pt-6 pb-28 sm:px-6 md:px-10 md:py-10">
-        <PageTransition>
-          <Suspense fallback={<RouteSkeleton />}>
-            <Outlet />
-          </Suspense>
-        </PageTransition>
+        <AnimatePresence mode="wait">
+          <PageTransition>
+            <Suspense fallback={<RouteSkeleton />}>
+              <Outlet />
+            </Suspense>
+          </PageTransition>
+        </AnimatePresence>
       </main>
 
       {/* Abas — celular */}

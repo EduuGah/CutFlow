@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { CalendarCheck, CalendarPlus, LogOut, UserRound } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { AnimatePresence } from 'motion/react';
 import { supabase } from '../../config/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Logo } from '../ui/Logo';
@@ -80,11 +81,13 @@ export const CustomerLayout = () => {
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-28 sm:px-6 sm:pb-12">
-        <PageTransition>
-          <Suspense fallback={<RouteSkeleton />}>
-            <Outlet />
-          </Suspense>
-        </PageTransition>
+        <AnimatePresence mode="wait">
+          <PageTransition>
+            <Suspense fallback={<RouteSkeleton />}>
+              <Outlet />
+            </Suspense>
+          </PageTransition>
+        </AnimatePresence>
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-porcelain/95 backdrop-blur-md pb-safe sm:hidden">

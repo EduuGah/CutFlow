@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { PoleBar } from '../ui/Pole';
 
 /**
@@ -36,8 +37,14 @@ export const RouteProgress = () => {
 export const PageTransition = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   return (
-    <div key={location.pathname} className="anim-rise">
+    <motion.div 
+      key={location.pathname}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+    >
       {children}
-    </div>
+    </motion.div>
   );
 };
