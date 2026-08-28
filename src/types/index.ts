@@ -30,3 +30,15 @@ export interface BarberSchedule {
   lunch_end: string | null;
 }
 
+export interface Appointment {
+  id: string;
+  customer_id: string;
+  barber_id: string;
+  service_id: string;
+  appointment_date: string;
+  start_time: string;
+  end_time: string;
+  status: AppointmentStatus;
+  created_at: string;
+}
+
