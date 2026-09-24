@@ -8,6 +8,18 @@ folgas e bloqueios em um painel próprio.
 
 **[Abrir o app](https://cut-flow-sandy.vercel.app)** · [Como executar](#como-executar) · [Decisões](#decisões-de-projeto)
 
+### Testar sem criar conta
+
+| Perfil   | Usuário    | Senha      |
+| -------- | ---------- | ---------- |
+| Dono     | `admin`    | `admin`    |
+| Barbeiro | `barbeiro` | `barbeiro` |
+| Cliente  | `cliente`  | `cliente`  |
+
+A tela de login tem um botão para cada perfil. As contas são criadas por
+[`docs/architecture/demo_accounts.sql`](docs/architecture/demo_accounts.sql): cole no SQL Editor do
+Supabase e execute. Pode rodar de novo quando quiser; as senhas e os perfis voltam ao padrão.
+
 ## O que ele faz
 
 **Cliente**
