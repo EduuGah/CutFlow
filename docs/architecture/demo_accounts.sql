@@ -11,8 +11,9 @@
 -- Como rodar: cole no SQL Editor do Supabase e execute. Pode rodar de novo
 -- quando quiser -- as senhas e os perfis voltam ao padrão.
 --
--- Dono e barbeiro entram na barbearia do dono mais antigo do projeto (ou na
--- primeira barbearia; sem nenhuma, uma é criada). O barbeiro ganha grade de
+-- Funciona com ou sem o esquema de várias barbearias. Com ele, dono e
+-- barbeiro entram na barbearia do dono mais antigo (ou na primeira; sem
+-- nenhuma, uma é criada). O barbeiro ganha grade de
 -- segunda a sábado e, se a barbearia não tiver serviço ativo, dois serviços de
 -- exemplo são criados -- sem isso o cliente não teria horário para marcar.
 -- ===========================================================================
@@ -69,23 +70,30 @@ declare
   v_shop uuid;
   v_user uuid;
   v_account record;
+  -- O esquema com várias barbearias (01_multi_tenant_migration.sql) é
+  -- opcional: sem ele, public.users não tem barbershop_id e o script segue
+  -- com uma barbearia só. Tudo que cita a coluna vai por SQL dinâmico.
+  v_multi boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'users' and column_name = 'barbershop_id'
+  );
 begin
-  select barbershop_id into v_shop
-  from public.users
-  where role = 'ADMIN'
-    and barbershop_id is not null
-    and email not like '%@demo.cutflow.app'
-  order by created_at
-  limit 1;
+  if v_multi then
+    execute $q$
+      select barbershop_id from public.users
+      where role = 'ADMIN' and barbershop_id is not null and email not like '%@demo.cutflow.app'
+      order by created_at limit 1
+    $q$ into v_shop;
 
-  if v_shop is null then
-    select id into v_shop from public.barbershops order by created_at limit 1;
-  end if;
+    if v_shop is null then
+      select id into v_shop from public.barbershops order by created_at limit 1;
+    end if;
 
-  if v_shop is null then
-    insert into public.barbershops (name, slug)
-    values ('Barbearia CutFlow', 'barbearia-cutflow')
-    returning id into v_shop;
+    if v_shop is null then
+      insert into public.barbershops (name, slug)
+      values ('Barbearia CutFlow', 'barbearia-cutflow')
+      returning id into v_shop;
+    end if;
   end if;
 
   for v_account in
@@ -102,19 +110,17 @@ begin
     );
 
     -- A trigger de cadastro pode já ter criado o perfil (como CUSTOMER);
-    -- aqui ele fica com o papel e a barbearia certos de qualquer forma.
-    insert into public.users (id, email, full_name, role, barbershop_id)
-    values (
-      v_user,
-      v_account.username || '@demo.cutflow.app',
-      v_account.full_name,
-      v_account.role,
-      case when v_account.role = 'CUSTOMER' then null else v_shop end
-    )
+    -- aqui ele fica com o papel certo de qualquer forma.
+    insert into public.users (id, email, full_name, role)
+    values (v_user, v_account.username || '@demo.cutflow.app', v_account.full_name, v_account.role)
     on conflict (id) do update
     set full_name = excluded.full_name,
-        role = excluded.role,
-        barbershop_id = excluded.barbershop_id;
+        role = excluded.role;
+
+    if v_multi then
+      execute 'update public.users set barbershop_id = $1 where id = $2'
+      using case when v_account.role = 'CUSTOMER' then null else v_shop end, v_user;
+    end if;
 
     if v_account.role = 'BARBER' then
       -- Segunda (1) a sábado (6), 9h às 19h, almoço 12h às 13h.
@@ -125,13 +131,21 @@ begin
     end if;
   end loop;
 
-  if not exists (
-    select 1 from public.services where barbershop_id = v_shop and is_active
-  ) then
-    insert into public.services (name, description, price, duration_minutes, barbershop_id)
+  -- Sem serviço ativo o cliente não tem o que marcar.
+  if v_multi then
+    if not exists (select 1 from public.services where is_active and barbershop_id = v_shop) then
+      execute $q$
+        insert into public.services (name, description, price, duration_minutes, barbershop_id)
+        values
+          ('Corte', 'Tesoura e máquina, com acabamento', 45, 30, $1),
+          ('Corte + Barba', 'Corte completo e barba alinhada na navalha', 70, 45, $1)
+      $q$ using v_shop;
+    end if;
+  elsif not exists (select 1 from public.services where is_active) then
+    insert into public.services (name, description, price, duration_minutes)
     values
-      ('Corte', 'Tesoura e máquina, com acabamento', 45, 30, v_shop),
-      ('Corte + Barba', 'Corte completo e barba alinhada na navalha', 70, 45, v_shop);
+      ('Corte', 'Tesoura e máquina, com acabamento', 45, 30),
+      ('Corte + Barba', 'Corte completo e barba alinhada na navalha', 70, 45);
   end if;
 end;
 $$;
